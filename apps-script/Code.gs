@@ -221,7 +221,7 @@ function migrateAccounts() {
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
-  try { return fn(); } finally { lock.releaseLock(); }
+  try { return fn(); } finally { bumpDash_(); lock.releaseLock(); }
 }
 
 /* ---------- Setup ---------- */
@@ -318,6 +318,7 @@ function doPost(e) {
 
     return out_({ ok: true, parsed: true, row: row, type: tx.type, direction: tx.direction, amount: tx.amount });
   } finally {
+    bumpDash_();
     lock.releaseLock();
   }
 }
@@ -634,9 +635,33 @@ function cycleStart_(now) { return cycleBounds_(now, 0).start; }
 function checkKey_(key) { checkAppKey_(key); }          // VIEW_KEY เลิกใช้แล้ว ใช้ APP_KEY อย่างเดียว
 
 /** เรียกผ่าน api_ จากหน้าเว็บ */
-function dashData(key, offset) {
+/* แคชผล dashData ใน CacheService (เปิดแอปครั้งถัดไปไม่ต้องอ่านชีตใหม่) ทุกการเขียนชีตเรียก bumpDash_() เพื่อทิ้งแคชเก่า
+ * ค่าเกิน 100KB หรือแคชใช้ไม่ได้ จะข้ามไปคำนวณสดเหมือนเดิม; fresh = true (ปุ่มรีเฟรช) ข้ามแคช */
+const DASH_TTL = 120;
+
+function dashVer_() {
+  const c = CacheService.getScriptCache();
+  let v = c.get('dashver');
+  if (!v) { v = String(Date.now()); c.put('dashver', v, 21600); }
+  return v;
+}
+
+function bumpDash_() {
+  try { CacheService.getScriptCache().put('dashver', String(Date.now()), 21600); } catch (err) { /* แคชใช้ไม่ได้: ข้าม */ }
+}
+
+function dashData(key, offset, fresh) {
   checkKey_(key);
-  return dashData_(Number(offset) || 0);
+  offset = Number(offset) || 0;
+  const c = CacheService.getScriptCache();
+  let ck = '';
+  try { ck = 'dash_' + dashVer_() + '_' + offset; } catch (err) { ck = ''; }
+  if (ck && !fresh) {
+    try { const hit = c.get(ck); if (hit) return JSON.parse(hit); } catch (err) { /* อ่านแคชไม่ได้: คำนวณสด */ }
+  }
+  const d = dashData_(offset);
+  if (ck) { try { c.put(ck, JSON.stringify(d), DASH_TTL); } catch (err) { /* ใหญ่เกินแคช: ข้าม */ } }
+  return d;
 }
 
 function setTagFromDash(key, row, tag) {
@@ -647,6 +672,7 @@ function setTagFromDash(key, row, tag) {
   row = Number(row);
   if (!(row >= 2 && row <= sh.getLastRow())) throw new Error('bad row');
   sh.getRange(row, COL.tag + 1).setValue(tag);
+  bumpDash_();
   return true;
 }
 
@@ -655,7 +681,7 @@ function setTagFromDash(key, row, tag) {
  * ตอบ {ok:true,data} หรือ {ok:false,error,auth?} (auth = key ผิด) ไม่ใช้ secret ของ MacroDroid */
 
 const API_FNS = {
-  dashData: function (k, a) { return dashData(k, a[0]); },
+  dashData: function (k, a) { return dashData(k, a[0], a[1]); },
   setTag: function (k, a) { return setTagFromDash(k, a[0], a[1]); },
   addCash: function (k, a) { return addCash(k, a[0]); },
   confirmRefund: function (k, a) { return confirmRefund(k, a[0], a[1]); },

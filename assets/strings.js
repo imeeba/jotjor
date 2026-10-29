@@ -4,6 +4,7 @@
 window.STRINGS = {
   'app.title': 'Jotjor จดจ่อ',
   'app.loading': 'กำลังโหลด...',
+  'app.newVersion': 'มีเวอร์ชันใหม่ แตะเพื่อโหลดใหม่',
 
   'top.prev': 'รอบก่อนหน้า',
   'top.next': 'รอบถัดไป',
