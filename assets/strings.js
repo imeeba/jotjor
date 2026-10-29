@@ -1,0 +1,135 @@
+/* ตารางข้อความทั้งหมดของหน้าเว็บ (key -> ไทย)
+ * จะเพิ่มภาษาอื่นภายหลัง: ทำตารางใหม่ชื่อ STRINGS_EN แล้วเลือกใน t() ตอนนี้มีไทยอย่างเดียว ไม่มีสวิตช์ภาษา
+ * {name} คือช่องแทนค่า */
+window.STRINGS = {
+  'app.title': 'Jotjor จดจ่อ',
+  'app.loading': 'กำลังโหลด...',
+
+  'top.prev': 'รอบก่อนหน้า',
+  'top.next': 'รอบถัดไป',
+  'top.refresh': 'รีเฟรช',
+  'top.settings': 'ตั้งค่า',
+  'top.current': ' (รอบนี้)',
+  'top.updated': 'อัปเดต {time}',
+
+  'setup.title': 'เชื่อมต่อ Jotjor',
+  'setup.intro': 'ใส่ลิงก์ Web app ของ Apps Script และ APP_KEY ของคุณ ระบบเก็บไว้ในเครื่องนี้เท่านั้น (ไม่ส่งไปที่อื่นนอกจาก Apps Script ของคุณ) ครั้งต่อไปไม่ต้องใส่ใหม่',
+  'setup.url': 'ลิงก์ Web app (ลงท้าย /exec)',
+  'setup.key': 'APP_KEY',
+  'setup.go': 'เชื่อมต่อ',
+  'setup.checking': 'กำลังตรวจสอบ...',
+  'setup.badUrl': 'ลิงก์ต้องขึ้นต้นด้วย https://script.google.com/ และลงท้าย /exec',
+  'setup.noKey': 'ใส่ APP_KEY ก่อน',
+  'setup.fail': 'เชื่อมต่อไม่ได้: {e}',
+
+  'settings.title': 'ตั้งค่า',
+  'settings.connected': 'เชื่อมต่ออยู่กับ Apps Script ของคุณ',
+  'settings.logout': 'ออกจากระบบ (ลบลิงก์และ key ออกจากเครื่องนี้)',
+  'settings.close': 'ปิด',
+  'settings.confirmLogout': 'ลบลิงก์และ APP_KEY ออกจากเครื่องนี้ใช่ไหม (ข้อมูลในชีตไม่หาย)',
+
+  'net.error': 'ติดต่อ Apps Script ไม่ได้ ตรวจอินเทอร์เน็ตหรือลิงก์ แล้วลองใหม่',
+  'net.badReply': 'ได้รับคำตอบที่อ่านไม่ได้จาก Apps Script (ลิงก์อาจไม่ใช่ /exec หรือยังไม่ได้ New version)',
+  'load.fail': 'โหลดข้อมูลไม่ได้: {e}',
+  'tag.saveFail': 'บันทึกแท็กไม่ได้: {e}',
+  'save.fail': 'บันทึกไม่ได้: {e}',
+
+  'cash.summary': '💵 บันทึกเงินสด',
+  'cash.out': 'จ่ายเงินสด',
+  'cash.in': 'รับเงินสด',
+  'cash.amount': 'จำนวนเงิน (บาท)',
+  'cash.merchant': 'ร้าน / รายละเอียด (ไม่บังคับ)',
+  'cash.when': 'วันเวลา (ว่าง = ตอนนี้)',
+  'cash.save': 'บันทึก',
+  'cash.saving': 'กำลังบันทึก...',
+  'cash.saved': 'บันทึกแล้ว',
+  'cash.fail': 'บันทึกไม่ได้: {e}',
+
+  'total.label': 'ใช้จ่ายรวม',
+  'unit.baht': ' บาท',
+  'total.today': 'วันนี้ {n} บาท',
+  'card.credit': '💳 บัตรเครดิต',
+  'card.transfer': '🏦 โอน/สแกนจ่าย',
+  'card.cash': '💵 เงินสด',
+  'card.todayCount': 'วันนี้ {today} · {count} รายการ',
+  'warn.unknown': 'มี {n} รายการที่ระบบแยกประเภทไม่ได้ (ดูชีต Tx)',
+
+  'income.label': 'รายรับ',
+  'income.account': '🏦 เงินเข้าบัญชี',
+  'income.cash': '💵 เงินสดรับ',
+  'income.card': '💳 เงินเข้าบัตร (คืนเงิน)',
+  'income.count': '{n} รายการ',
+  'income.cardNote': '{n} รายการ · หักจากยอดบัตรเครดิตและยอดแท็กแล้ว เป็นรายการเดียวกัน ไม่ใช่เงินเพิ่ม',
+
+  'suggest.title': 'เงินเข้านี้เป็นเงินคืนหรือไม่?',
+  'suggest.in': 'เงินเข้า +{amount}',
+  'suggest.at': 'เข้า {time}',
+  'suggest.match': 'ตรงกับโอนออก {time}{merchant} · แท็ก {tag}',
+  'suggest.yes': 'ใช่ เป็นเงินคืน',
+  'suggest.no': 'ไม่ใช่',
+  'suggest.note': 'ถ้ายังไม่ตัดสิน จะนับเป็นเงินเข้าปกติไปก่อน กด "ใช่" แล้วยอดโอนและยอดแท็กเดิมจะลดลง และไม่นับเป็นรายรับ',
+
+  'cp.credit': '💳 Checkpoint บัตรเครดิต',
+  'cp.transfer': '🏦 Checkpoint โอน/สแกนจ่าย',
+  'cp.remaining': 'อีก {n} ถึง {next}',
+  'cp.none': 'ยังไม่ถึง {step}',
+
+  'bytag.title': 'แยกตามประเภท',
+  'bytag.empty': 'ยังไม่มีรายการ',
+
+  'subs.title': 'สัดส่วนแท็กรอง',
+  'subs.all': 'ตั้งแต่เริ่มบันทึก',
+  'subs.cycle': 'รอบนี้',
+  'subs.empty': 'ยังไม่มีรายการที่ใช้แท็กรอง เลือกแท็กแบบ หลัก / รอง ในรายการด้านล่าง',
+  'subs.none': 'ไม่ระบุ',
+
+  'recent.title': 'รายการล่าสุด',
+  'recent.onlyUn': 'เฉพาะที่ยังไม่แท็ก ({n})',
+  'recent.all': 'แสดงทั้งหมด',
+  'recent.empty': 'ไม่มีรายการ',
+  'recent.creditRefund': 'คืนเงินบัตร',
+  'recent.creditName': 'บัตรเครดิต',
+  'recent.cashName': 'เงินสด',
+  'recent.refundIn': 'เงินคืน',
+  'recent.in': 'เงินเข้า',
+  'recent.outName': 'โอน/ถอน',
+  'recent.whoCash': '💵 เงินสด',
+  'recent.whoCard': '💳 บัตร x{ref}',
+  'recent.whoAcct': '🏦 บัญชี x{ref}',
+  'recent.cardRefundNote': 'หักยอดเครดิตแล้ว',
+  'recent.linkedNote': 'ผูกกับรายการเดิม หักยอดแล้ว',
+  'tag.pick': 'เลือกแท็ก...',
+  'tag.noSub': '{m} (ไม่ระบุ)',
+  'tag.skip': 'ข้าม',
+  'tag.untagged': 'ยังไม่แท็ก',
+  'tag.sep': ' / ',
+
+  'mg.title': 'จัดการแท็ก',
+  'mg.hint': 'ตัวเลขคือจำนวนรายการที่ใช้แท็กนั้น (ทุกรอบ)',
+  'mg.addSub': '+รอง',
+  'mg.rename': 'แก้ชื่อ',
+  'mg.delete': 'ลบ',
+  'mg.renameTo': 'ชื่อใหม่ของ “{name}”',
+  'mg.save': 'บันทึก',
+  'mg.cancel': 'ยกเลิก',
+  'mg.mergeMsg': 'ชื่อ “{draft}” มีอยู่แล้ว จะรวม “{name}” เข้ากับ “{target}” ({count} รายการ/กฎ จะเปลี่ยนไปใช้แท็กนั้น) ย้อนกลับไม่ได้',
+  'mg.mergeGo': 'ยืนยันรวม',
+  'mg.addSubTo': 'เพิ่มแท็กรองใน “{main}”',
+  'mg.subName': 'ชื่อแท็กรอง',
+  'mg.add': 'เพิ่ม',
+  'mg.delAsk': 'ลบ “{name}”?',
+  'mg.delSubs': ' (รวมแท็กรองทั้งหมดของมัน)',
+  'mg.delUse': 'มี {tx} รายการ{rules} ใช้แท็กนี้อยู่',
+  'mg.delRules': ' และ {n} กฎ',
+  'mg.moveTo': 'ย้ายไปแท็ก',
+  'mg.moveNone': 'ยังไม่แท็ก (ถ้าเลือกนี้ กฎที่ใช้แท็กนี้จะถูกลบ)',
+  'mg.delGo': 'ลบเลย',
+  'mg.newMain': 'แท็กหลักใหม่'
+};
+
+/** t('key', {name: value}) คืนข้อความไทย ถ้าไม่มี key คืนตัว key เอง (เห็นง่ายตอนลืมเติม) */
+window.t = function (key, vars) {
+  var s = Object.prototype.hasOwnProperty.call(window.STRINGS, key) ? window.STRINGS[key] : key;
+  if (vars) s = s.replace(/\{(\w+)\}/g, function (m, k) { return vars[k] == null ? '' : vars[k]; });
+  return s;
+};

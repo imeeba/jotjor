@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>Jotjor จดจ่อ</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body><div class="wrap">
+
+<section id="setup" class="setup" hidden>
+  <h1 data-t="setup.title"></h1>
+  <p data-t="setup.intro"></p>
+  <form class="form" id="setupForm" autocomplete="off">
+    <div class="lab" data-t="setup.url"></div>
+    <input id="sUrl" type="url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/.../exec">
+    <div class="lab" data-t="setup.key"></div>
+    <input id="sKey" type="password" autocapitalize="off" spellcheck="false" autocomplete="off">
+    <button id="sGo" class="pri" type="submit" data-t="setup.go"></button>
+    <div id="sMsg" class="sub" style="margin-top:10px"></div>
+  </form>
+</section>
+
+<section id="main" hidden>
+  <div class="top">
+    <button id="prev" data-aria="top.prev">&#8249;</button>
+    <div class="mid"><div class="cl" id="cyc">&nbsp;</div><div class="sub" id="upd">&nbsp;</div></div>
+    <button id="next" data-aria="top.next">&#8250;</button>
+    <button id="rf" data-aria="top.refresh">&#10227;</button>
+    <button id="gear" class="gear" data-aria="top.settings">&#9881;</button>
+  </div>
+  <div id="err" class="err" hidden></div>
+  <details class="card" id="setbox" hidden>
+    <summary data-t="settings.title"></summary>
+    <div class="cf">
+      <div class="sub" style="margin-top:8px" data-t="settings.connected"></div>
+      <button id="logout" data-t="settings.logout"></button>
+    </div>
+  </details>
+  <details class="card" id="cashbox"><summary data-t="cash.summary"></summary><div class="cf">
+    <div class="seg"><button id="cout" class="on" type="button" data-t="cash.out"></button><button id="cin" type="button" data-t="cash.in"></button></div>
+    <input id="camt" type="text" inputmode="decimal" data-ph="cash.amount" autocomplete="off">
+    <input id="cmer" type="text" maxlength="40" data-ph="cash.merchant" autocomplete="off">
+    <input id="cwhen" type="datetime-local" data-aria="cash.when">
+    <button id="cgo" class="pri" type="button" data-t="cash.save"></button>
+    <div id="cmsg" class="sub" style="margin-top:8px"></div>
+  </div></details>
+  <div id="app"><div class="sub" style="padding:24px 0" data-t="app.loading"></div></div>
+</section>
+
+</div>
+<script src="assets/strings.js"></script>
+<script src="assets/app.js"></script>
+</body></html>
