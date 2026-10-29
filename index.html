@@ -5,7 +5,8 @@
 <title>Jotjor จดจ่อ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=2">
+<script>try{var th=localStorage.getItem("jotjor_theme");if(th==="light"||th==="dark")document.documentElement.setAttribute("data-theme",th)}catch(e){}</script>
+<link rel="stylesheet" href="assets/style.css?v=4">
 </head>
 <body><div class="wrap">
 
@@ -32,14 +33,6 @@
     <button id="gear" class="gear" data-aria="top.settings"><i class="ic ic-settings"></i></button>
   </div>
   <div id="err" class="err" hidden></div>
-  <details class="card" id="setbox" hidden>
-    <summary data-t="settings.title"></summary>
-    <div class="cf">
-      <div class="sub" style="margin-top:8px" data-t="settings.connected"></div>
-      <button id="logout" data-t="settings.logout"></button>
-    </div>
-    <section id="mgbox" class="mgset"></section>
-  </details>
   <div id="hold" hidden>  <section class="card" id="cashbox">
     <div id="cashhead"></div>
     <button id="cashToggle" class="pri addbtn" type="button" data-t="cash.add"></button>
@@ -55,7 +48,17 @@
   <div id="app"><div class="sub" style="padding:24px 0" data-t="app.loading"></div></div>
 </section>
 
+<section id="settings" hidden>
+  <div class="sethead"><button id="setback" type="button" data-aria="settings.back"><i class="ic ic-prev"></i></button><h1 data-t="settings.title"></h1></div>
+  <section class="card setcard"><h2 data-t="settings.theme"></h2>
+    <div class="seg" id="themeSeg"><button type="button" data-th="system" data-t="theme.system"></button><button type="button" data-th="light" data-t="theme.light"></button><button type="button" data-th="dark" data-t="theme.dark"></button></div>
+  </section>
+  <section class="card setcard" id="mgbox"></section>
+  <section class="card setcard"><div class="sub" data-t="settings.connected"></div>
+    <button id="logout" class="dng" type="button" data-t="settings.logout"></button></section>
+</section>
+
 </div>
-<script src="assets/strings.js?v=2"></script>
-<script src="assets/app.js?v=2"></script>
+<script src="assets/strings.js?v=4"></script>
+<script src="assets/app.js?v=4"></script>
 </body></html>
