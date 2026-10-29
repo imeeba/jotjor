@@ -100,3 +100,31 @@ details.card summary{font-weight:600;cursor:pointer}
 .ic-credit{--i:url(../icons/card-credit.svg)}.ic-transfer{--i:url(../icons/card-transfer.svg)}.ic-cash{--i:url(../icons/card-cash.svg)}.ic-sub{--i:url(../icons/sub.svg)}
 .ic-prev{--i:url(../icons/prev.svg)}.ic-next{--i:url(../icons/next.svg)}.ic-refresh{--i:url(../icons/refresh.svg)}.ic-settings{--i:url(../icons/settings.svg)}
 .top .ic{width:22px;height:22px;vertical-align:middle}
+.tabs{display:flex;gap:6px;padding:4px;background:var(--pill);border-radius:999px;margin-top:4px}
+.tabs button{flex:1;height:38px;border:0;border-radius:999px;background:transparent;color:var(--mute);font:inherit;font-weight:600;position:relative}
+.tabs button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.tabs button.dot::after{content:"";position:absolute;top:8px;right:22%;width:8px;height:8px;border-radius:50%;background:var(--c)}
+.unbar{background:var(--warn);color:var(--warnink);padding:14px 16px}
+.unbar .unh{display:flex;justify-content:space-between;align-items:center;font-weight:600;cursor:pointer}
+.unbar .item{border-top-color:rgba(0,0,0,.08)}
+.unbar .sub{color:var(--warnink);opacity:.8}
+.chead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.chead h2{margin:0}
+.cat{border-top:1px solid var(--line)}
+.cat:first-of-type{border-top:0}
+.crow{display:grid;grid-template-columns:minmax(0,34%) 1fr auto;align-items:center;gap:10px;padding:11px 0}
+.crow.s{padding:7px 0 7px 14px;font-size:14px;color:var(--mute)}
+.cn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.crow.s .cn{font-weight:500}
+.cv{font-variant-numeric:tabular-nums;font-weight:600;min-width:44px;text-align:right}
+.cat.un .cn{color:var(--warnink)}
+.car{font-style:normal;margin-left:6px;color:var(--mute);display:inline-block;transition:transform .15s}
+.car.o{transform:rotate(180deg)}
+.crow .bar{display:block}
+.mini .bar.cpb{background:rgba(255,255,255,.3);margin-top:12px}
+.mini .bar.cpb i{background:#fff}
+.mini .cp{color:rgba(255,255,255,.85);margin-top:4px}
+#cashbox .num{font-size:26px;font-weight:700;letter-spacing:-.8px;font-variant-numeric:tabular-nums}
+#cashbox .addbtn{width:100%;height:42px;border-radius:999px;border:0;font:inherit;font-weight:600;background:var(--ink);color:var(--bg)}
+#cashslot .card{margin-top:12px}
+.mgset{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}

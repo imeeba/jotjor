@@ -6,7 +6,7 @@
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
-var offset = 0, DATA = null, onlyUn = false, subScope = 'all';
+var offset = 0, DATA = null, tab = 'out', catAmt = false, catOpen = {}, catNames = [], unOpen = false;
 var mg = null, mgErr = '', mgBusy = false, mgNew = '', MGL = [];
 var cDir = 'out', cBusy = false, rBusy = false;
 
@@ -134,10 +134,11 @@ function setTag(row, sel) {
 }
 window.setTag = setTag;
 
-function toggleUn() { onlyUn = !onlyUn; render(); }
-function setScopeAll() { subScope = 'all'; render(); }
-function setScopeCycle() { subScope = 'cycle'; render(); }
-window.toggleUn = toggleUn; window.setScopeAll = setScopeAll; window.setScopeCycle = setScopeCycle;
+function toggleCat() { catAmt = !catAmt; render(); }
+function toggleCatOpen(i) { var n = catNames[i]; if (n != null) catOpen[n] = !catOpen[n]; render(); }
+function toggleUnOpen() { unOpen = !unOpen; render(); }
+window.toggleCat = toggleCat; window.toggleCatOpen = toggleCatOpen; window.toggleUnOpen = toggleUnOpen;
+
 
 /* ---------- เงินสด ---------- */
 
@@ -183,26 +184,6 @@ function tagOpts(d, cur) {
     h += '</optgroup>';
   });
   return h + opt('ข้าม', t('tag.skip'), cur);   // ค่า 'ข้าม' คือค่าที่เก็บในชีต ต้องตรงกับ SKIP_TAG ฝั่ง Apps Script
-}
-
-function subBlock(d) {
-  var data = d.subs[subScope] || {};
-  var names = Object.keys(data).sort(function (a, b) { return data[b].total - data[a].total; });
-  var h = '<section class="card"><h2>' + t('subs.title') + '</h2><div class="seg">'
-    + '<button class="' + (subScope === 'all' ? 'on' : '') + '" onclick="setScopeAll()">' + t('subs.all') + '</button>'
-    + '<button class="' + (subScope === 'cycle' ? 'on' : '') + '" onclick="setScopeCycle()">' + t('subs.cycle') + '</button></div>';
-  if (!names.length) return h + '<div class="sub" style="margin-top:10px">' + t('subs.empty') + '</div></section>';
-  names.forEach(function (m) {
-    var g = data[m], tot = g.total;
-    h += '<div class="grp"><div class="gh"><span>' + esc(m) + '</span><span>' + money(tot) + '</span></div>';
-    g.parts.forEach(function (p) {
-      var pct = tot > 0 ? p.amt / tot * 100 : 0;
-      h += '<div class="prow"><div class="ph"><span>' + esc(p.name || t('subs.none')) + '</span><span>' + money(p.amt) + ' &middot; ' + pct.toFixed(0) + '%</span></div>'
-        + '<div class="bar c"><i style="width:' + Math.max(1, Math.min(100, pct)).toFixed(1) + '%"></i></div></div>';
-    });
-    h += '</div>';
-  });
-  return h + '</section>';
 }
 
 /* ----- จัดการแท็ก: เพิ่ม / เปลี่ยนชื่อ / ลบ (ยืนยันในหน้า ไม่ใช้ alert/confirm/prompt) ----- */
@@ -285,7 +266,6 @@ function mgInner(d) {
   return h;
 }
 
-function manageBlock(d) { return '<section class="card" id="mgbox">' + mgInner(d) + '</section>'; }
 function renderMg() { var b = $('mgbox'); if (b && DATA) b.innerHTML = mgInner(DATA); }
 
 function mgOpen(i, mode) {
@@ -336,40 +316,72 @@ window.mgRenameOpen = mgRenameOpen; window.mgAddSubOpen = mgAddSubOpen; window.m
 window.mgCancel = mgCancel; window.mgRenameGo = mgRenameGo; window.mgMergeGo = mgMergeGo;
 window.mgAddSubGo = mgAddSubGo; window.mgDelGo = mgDelGo; window.mgAddMain = mgAddMain;
 
-function cpBlock(title, s, cls) {
-  var pct = Math.max(0, Math.min(100, s.progress * 100));
-  var h = '<section class="card"><h2>' + title + '</h2>';
-  h += '<div class="bar ' + cls + '"><i style="width:' + pct.toFixed(1) + '%"></i></div>';
-  h += '<div class="cp"><span>' + money(s.prev, 0) + '</span><span>' + t('cp.remaining', { n: money(s.remaining), next: money(s.next, 0) }) + '</span></div>';
-  h += '<div class="chips">';
-  if (!s.checkpoints.length) h += '<span class="chip">' + t('cp.none', { step: money(DATA.step, 0) }) + '</span>';
-  s.checkpoints.forEach(function (p) {
-    h += '<span class="chip"><b>' + money(p.k, 0) + '</b> &middot; ' + fDT.format(new Date(p.at)) + '</span>';
-  });
-  return h + '</div></section>';
-}
-
-function tagBlock(d) {
-  var map = {};
+function catBlock(d) {
+  var map = {}, total = 0;
   ['credit', 'transfer', 'cash'].forEach(function (k) {
     var bt = d[k].byTag;
     Object.keys(bt).forEach(function (tg) {
-      var m = map[tg] || (map[tg] = { c: 0, t: 0, k: 0 });
-      if (k === 'credit') m.c += bt[tg]; else if (k === 'transfer') m.t += bt[tg]; else m.k += bt[tg];
+      var v = bt[tg]; if (Math.abs(v) < 0.005) return;
+      var i = tg.indexOf('/'), main = i < 0 ? tg : tg.slice(0, i), sub = i < 0 ? '' : tg.slice(i + 1);
+      var m = map[main] || (map[main] = { total: 0, subs: {} });
+      m.total += v; total += v;
+      m.subs[sub] = (m.subs[sub] || 0) + v;
     });
   });
-  var names = Object.keys(map).filter(function (n) { return Math.abs(map[n].c + map[n].t + map[n].k) > 0.004; });
-  names.sort(function (a, b) { return (map[b].c + map[b].t + map[b].k) - (map[a].c + map[a].t + map[a].k); });
-  var h = '<section class="card"><h2>' + t('bytag.title') + '</h2>';
-  if (!names.length) return h + '<div class="sub">' + t('bytag.empty') + '</div></section>';
-  var mx = Math.max(map[names[0]].c + map[names[0]].t + map[names[0]].k, 1);
+  var names = Object.keys(map);
+  var h = '<section class="card"><div class="chead"><h2>' + t('cat.title') + '</h2><button class="mb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></div>';
+  if (!names.length) return h + '<div class="sub">' + t('cat.empty') + '</div></section>';
+  names.sort(function (a, b) { return map[b].total - map[a].total; });
+  catNames = names;
   names.forEach(function (n) {
-    var m = map[n], tot = m.c + m.t + m.k;
-    h += '<div class="trow' + (n === 'ยังไม่แท็ก' ? ' un' : '') + '"><div class="h"><span class="tn">' + esc(n === 'ยังไม่แท็ก' ? t('tag.untagged') : n) + '</span><span class="tv">' + money(tot) + '</span></div>';
-    h += '<div class="bar c"><i style="width:' + Math.max(2, Math.min(100, tot / mx * 100)).toFixed(1) + '%"></i></div>';
-    h += '<div class="sub" style="margin-top:4px">💳 ' + money(m.c) + ' &middot; 🏦 ' + money(m.t) + (m.k ? ' &middot; 💵 ' + money(m.k) : '') + '</div></div>';
+    var m = map[n], p = total > 0 ? m.total / total * 100 : 0;
+    var subs = Object.keys(m.subs).filter(function (x) { return x !== ''; });
+    var open = !!catOpen[n], un = n === 'ยังไม่แท็ก';
+    var val = catAmt ? money(m.total) : p.toFixed(0) + '%';
+    h += '<div class="cat' + (un ? ' un' : '') + '"><div class="crow"' + (subs.length ? ' onclick="toggleCatOpen(' + catNames.indexOf(n) + ')"' : '') + '>'
+      + '<span class="cn">' + esc(un ? t('tag.untagged') : n) + (subs.length ? '<i class="car' + (open ? ' o' : '') + '">&#9662;</i>' : '') + '</span>'
+      + '<span class="bar c"><i style="width:' + Math.max(0, Math.min(100, p)).toFixed(1) + '%"></i></span>'
+      + '<span class="cv">' + val + '</span></div>';
+    if (open && subs.length) {
+      subs.sort(function (a, b) { return m.subs[b] - m.subs[a]; });
+      if (m.subs[''] > 0.004) subs.push('');
+      subs.forEach(function (x) {
+        var v = m.subs[x], sp = total > 0 ? v / total * 100 : 0;
+        h += '<div class="crow s"><span class="cn">' + esc(x || t('subs.none')) + '</span><span class="bar c"><i style="width:' + Math.max(0, Math.min(100, sp)).toFixed(1) + '%"></i></span><span class="cv">' + (catAmt ? money(v) : sp.toFixed(0) + '%') + '</span></div>';
+      });
+    }
+    h += '</div>';
   });
   return h + '</section>';
+}
+
+function unBar(d) {
+  var list = d.recent.filter(function (x) { return x.dir === 'out' && !x.tag; });
+  if (!d.untagged) return '';
+  var h = '<section class="card unbar"><div class="unh" onclick="toggleUnOpen()">' + te('un.bar', { n: d.untagged }) + '<i class="car' + (unOpen ? ' o' : '') + '">&#9662;</i></div>';
+  if (unOpen) list.forEach(function (x) {
+    var nm = x.merchant || t(x.stream === 'credit' ? 'recent.creditName' : (x.stream === 'cash' ? 'recent.cashName' : 'recent.outName'));
+    h += '<div class="item"><div class="nm">' + esc(nm) + '</div><div class="am">' + money(x.amount, 2) + '</div><div class="sub">' + fDT.format(new Date(x.at)) + '</div><div></div>'
+      + '<select class="un" onchange="setTag(' + Number(x.row) + ',this)"><option value="">' + t('tag.pick') + '</option>' + tagOpts(d, '') + '</select></div>';
+  });
+  return h + '</section>';
+}
+
+function streamCard(cls, label, s, step) {
+  var pct = Math.max(0, Math.min(100, s.progress * 100));
+  return '<div class="mini ' + cls + '"><div class="lab">' + label + '</div><div class="num">' + money(s.total) + '</div>'
+    + '<div class="sub">' + t('card.todayCount', { today: money(s.today), count: s.count }) + '</div>'
+    + '<div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
+    + '<div class="cp"><span>' + money(s.prev, 0) + '</span><span>' + money(s.next, 0) + '</span></div>'
+    + '<div class="sub">' + t('cp.remaining', { n: money(s.remaining), next: money(s.next, 0) }) + '</div></div>';
+}
+
+function cashHead(d) {
+  var k = d.cash, p = d.total.total > 0 ? Math.max(0, Math.min(100, k.total / d.total.total * 100)) : 0;
+  $('cashhead').innerHTML = icons('<div class="lab">💵 ' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
+    + '<div class="sub">' + esc(t('card.todayCount', { today: money(k.today), count: k.count })) + '</div>'
+    + '<div class="bar c" style="margin-top:10px"><i style="width:' + p.toFixed(1) + '%"></i></div>'
+    + '<div class="sub" style="margin:6px 0 10px">' + esc(t('cash.share', { p: p.toFixed(0) })) + '</div>');
 }
 
 function suggestBlock(d) {
@@ -398,12 +410,10 @@ function incomeBlock(d) {
 
 function recentBlock(d) {
   var h = '<section class="card"><h2>' + t('recent.title') + '</h2>';
-  h += '<button class="tog" onclick="toggleUn()">' + (onlyUn ? t('recent.all') : t('recent.onlyUn', { n: d.untagged })) + '</button>';
   var shown = 0;
   d.recent.forEach(function (x) {
     var spend = x.dir === 'out';
     var refund = x.stream === 'credit' && !spend;
-    if (onlyUn && !(spend && !x.tag)) return;
     shown++;
     var nm = x.merchant || (x.stream === 'credit' ? t(refund ? 'recent.creditRefund' : 'recent.creditName')
       : (x.stream === 'cash' ? t('recent.cashName') : (spend ? t('recent.outName') : t(x.linked ? 'recent.refundIn' : 'recent.in'))));
@@ -438,22 +448,29 @@ function spark(a) {
 }
 
 function render() {
-  var d = DATA, c = d.credit, tr = d.transfer, k = d.cash;
+  var d = DATA, c = d.credit, tr = d.transfer;
   mg = null; mgErr = '';
   $('cyc').textContent = fDay.format(new Date(d.cycle.start)) + ' – ' + fDay.format(new Date(d.cycle.end - 86400000)) + (offset === 0 ? t('top.current') : '');
   $('upd').textContent = t('top.updated', { time: fT.format(new Date(d.now)) });
   $('next').disabled = offset >= 0;
-  var h = '<section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
-  h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section><div class="split">';
-  h += '<div class="mini c"><div class="lab">' + t('card.credit') + '</div><div class="num">' + money(c.total) + '</div><div class="sub">' + t('card.todayCount', { today: money(c.today), count: c.count }) + '</div>' + spark(d.daily && d.daily.credit) + '</div>';
-  h += '<div class="mini t"><div class="lab">' + t('card.transfer') + '</div><div class="num">' + money(tr.total) + '</div><div class="sub">' + t('card.todayCount', { today: money(tr.today), count: tr.count }) + '</div>' + spark(d.daily && d.daily.transfer) + '</div>';
-  h += '<div class="mini k"><div class="lab">' + t('card.cash') + '</div><div class="num">' + money(k.total) + '</div><div class="sub">' + t('card.todayCount', { today: money(k.today), count: k.count }) + '</div></div>';
-  h += '</div>';
-  h += suggestBlock(d) + incomeBlock(d);
-  if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
-  h += cpBlock(t('cp.credit'), c, 'c') + cpBlock(t('cp.transfer'), tr, 't');
-  h += tagBlock(d) + subBlock(d) + recentBlock(d) + manageBlock(d);
+  $('tabOut').className = tab === 'out' ? 'on' : ''; $('tabIn').className = tab === 'in' ? 'on' : '';
+  $('tabIn').className += (d.suggest && d.suggest.length ? ' dot' : '');
+  $('hold').appendChild($('cashbox'));   // เก็บฟอร์มเงินสดไว้ก่อน innerHTML จะล้างหน้า
+  var h = '';
+  if (tab === 'out') {
+    h += unBar(d) + suggestBlock(d);
+    h += '<section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
+    h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section><div class="split">';
+    h += streamCard('c', t('card.credit'), c) + streamCard('t', t('card.transfer'), tr) + '</div>';
+    h += '<div id="cashslot"></div>';
+    if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
+    h += catBlock(d) + recentBlock(d);
+  } else {
+    h += suggestBlock(d) + incomeBlock(d);
+  }
   $('app').innerHTML = icons(h);
+  if (tab === 'out') { cashHead(d); $('cashslot').appendChild($('cashbox')); }
+  renderMg();
 }
 
 /* ---------- เริ่มต้น ---------- */
@@ -474,6 +491,9 @@ $('rf').onclick = load;
 $('cout').onclick = function () { cashDir('out'); };
 $('cin').onclick = function () { cashDir('in'); };
 $('cgo').onclick = cashGo;
+$('cashToggle').onclick = function () { var f = $('cashform'); f.hidden = !f.hidden; };
+$('tabOut').onclick = function () { tab = 'out'; if (DATA) render(); };
+$('tabIn').onclick = function () { tab = 'in'; if (DATA) render(); };
 document.addEventListener('visibilitychange', function () { if (!document.hidden && !$('main').hidden && !busy()) load(); });
 setInterval(function () { if (!document.hidden && !$('main').hidden && !busy()) load(); }, 60000);
 

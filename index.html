@@ -37,15 +37,21 @@
       <div class="sub" style="margin-top:8px" data-t="settings.connected"></div>
       <button id="logout" data-t="settings.logout"></button>
     </div>
+    <section id="mgbox" class="mgset"></section>
   </details>
-  <details class="card" id="cashbox"><summary data-t="cash.summary"></summary><div class="cf">
-    <div class="seg"><button id="cout" class="on" type="button" data-t="cash.out"></button><button id="cin" type="button" data-t="cash.in"></button></div>
-    <input id="camt" type="text" inputmode="decimal" data-ph="cash.amount" autocomplete="off">
-    <input id="cmer" type="text" maxlength="40" data-ph="cash.merchant" autocomplete="off">
-    <input id="cwhen" type="datetime-local" data-aria="cash.when">
-    <button id="cgo" class="pri" type="button" data-t="cash.save"></button>
-    <div id="cmsg" class="sub" style="margin-top:8px"></div>
-  </div></details>
+  <nav class="tabs" id="tabs"><button id="tabOut" class="on" type="button" data-t="tab.out"></button><button id="tabIn" type="button" data-t="tab.in"></button></nav>
+  <div id="hold" hidden><section class="card" id="cashbox">
+    <div id="cashhead"></div>
+    <button id="cashToggle" class="pri addbtn" type="button" data-t="cash.add"></button>
+    <div class="cf" id="cashform" hidden>
+      <div class="seg"><button id="cout" class="on" type="button" data-t="cash.out"></button><button id="cin" type="button" data-t="cash.in"></button></div>
+      <input id="camt" type="text" inputmode="decimal" data-ph="cash.amount" autocomplete="off">
+      <input id="cmer" type="text" maxlength="40" data-ph="cash.merchant" autocomplete="off">
+      <input id="cwhen" type="datetime-local" data-aria="cash.when">
+      <button id="cgo" class="pri" type="button" data-t="cash.save"></button>
+      <div id="cmsg" class="sub" style="margin-top:8px"></div>
+    </div>
+  </section></div>
   <div id="app"><div class="sub" style="padding:24px 0" data-t="app.loading"></div></div>
 </section>
 
