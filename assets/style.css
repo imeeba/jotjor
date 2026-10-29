@@ -137,7 +137,9 @@ select{-webkit-appearance:none;appearance:none;padding-right:38px!important;back
 .sethead{display:flex;align-items:center;gap:10px;padding-top:12px}
 .sethead h1{font-size:18px;margin:0}
 .sethead button{width:36px;height:36px;border-radius:999px;border:0;box-shadow:var(--shadow);background:var(--card);color:var(--ink)}
-.setcard .seg{margin-top:8px}
+.sethead .themebtn{margin-left:auto}
+.cprow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.cprow input{min-width:0}
 .setcard .dng{width:100%;height:40px;border-radius:999px;border:0;background:var(--warn);color:var(--warnink);font:inherit;font-weight:600;margin-top:10px}
 .toprow{display:grid;grid-template-columns:7fr 3fr;gap:12px;margin-top:12px}
 .toprow .card{margin-top:0}
@@ -166,3 +168,5 @@ select{-webkit-appearance:none;appearance:none;padding-right:38px!important;back
 .mgp .btns{align-items:stretch}
 .mgp .btns button{height:42px;margin:0;flex:1 1 0;min-width:0}
 .mgp input,.mgp select{margin-top:6px}
+
+.ic-monitor{--i:url(../icons/monitor.svg)}.ic-sun{--i:url(../icons/sun.svg)}.ic-moon{--i:url(../icons/moon.svg)}

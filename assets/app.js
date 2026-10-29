@@ -6,7 +6,7 @@
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
-var recentPage = 0, offset = 0, DATA = null, tab = 'out', catAmt = false, catSubs = false, unOpen = false;
+var recentPage = { out: 0, in: 0 }, offset = 0, DATA = null, tab = 'out', catAmt = false, catSubs = false, unOpen = false;
 var mg = null, mgErr = '', mgBusy = false, mgNew = '', MGL = [];
 var cDir = 'out', cBusy = false, rBusy = false;
 
@@ -126,14 +126,19 @@ function showView(v) {
 }
 $('gear').onclick = function () { showView('settings'); };
 $('setback').onclick = function () { showView('main'); };
+var THEME_IC = { system: 'monitor', light: 'sun', dark: 'moon' };
 function applyTheme(th) {
   var r = document.documentElement;
   if (th === 'light' || th === 'dark') r.setAttribute('data-theme', th); else r.removeAttribute('data-theme');
-  Array.prototype.forEach.call(document.querySelectorAll('#themeSeg button'), function (b) { b.className = b.getAttribute('data-th') === (th || 'system') ? 'on' : ''; });
+  var cur = (th === 'light' || th === 'dark') ? th : 'system';
+  $('themeBtn').innerHTML = '<i class="ic ic-' + THEME_IC[cur] + '"></i>';
+  $('themeBtn').setAttribute('aria-label', t('settings.theme') + ': ' + t('theme.' + cur));
 }
-Array.prototype.forEach.call(document.querySelectorAll('#themeSeg button'), function (b) {
-  b.onclick = function () { var th = b.getAttribute('data-th'); lsSet('jotjor_theme', th); applyTheme(th); };
-});
+$('themeBtn').onclick = function () {
+  var cur = lsGet('jotjor_theme'); cur = (cur === 'light' || cur === 'dark') ? cur : 'system';
+  var th = { system: 'light', light: 'dark', dark: 'system' }[cur];
+  lsSet('jotjor_theme', th); applyTheme(th);
+};
 applyTheme(lsGet('jotjor_theme'));
 $('logout').onclick = function () {
   if (!window.confirm(t('settings.confirmLogout'))) return;
@@ -163,7 +168,7 @@ function setTag(row, sel) {
 }
 window.setTag = setTag;
 
-function recentGo(n) { recentPage = Math.max(0, recentPage + n); render(); }
+function recentGo(n) { recentPage[tab] = Math.max(0, recentPage[tab] + n); render(); }
 window.recentGo = recentGo;
 function toggleCat() { catAmt = !catAmt; render(); }
 function toggleSubs() { catSubs = !catSubs; render(); }
@@ -442,11 +447,12 @@ function incomeBlock(d) {
   return h + '</div></section>';
 }
 
-function recentBlock(d) {
+function recentBlock(d, mode) {
   var h = '<section class="card"><h2>' + t('recent.title') + '</h2>';
-  var shown = 0, PER = 5, pages = Math.max(1, Math.ceil(d.recent.length / PER));
-  if (recentPage >= pages) recentPage = pages - 1;
-  d.recent.slice(recentPage * PER, recentPage * PER + PER).forEach(function (x) {
+  var list = d.recent.filter(function (x) { return mode === 'in' ? x.dir === 'in' : (x.dir === 'out' || x.stream === 'credit'); });   // หน้ารายจ่ายรวมเงินคืนบัตรที่หักยอด
+  var shown = 0, PER = 5, pages = Math.max(1, Math.ceil(list.length / PER)), page = Math.min(recentPage[mode], pages - 1);
+  recentPage[mode] = page;
+  list.slice(page * PER, page * PER + PER).forEach(function (x) {
     var spend = x.dir === 'out';
     var refund = x.stream === 'credit' && !spend;
     shown++;
@@ -464,7 +470,7 @@ function recentBlock(d) {
     h += '</div>';
   });
   if (!shown) h += '<div class="sub" style="padding:12px 0">' + t('recent.empty') + '</div>';
-  if (pages > 1) h += '<div class="pg"><button' + (recentPage <= 0 ? ' disabled' : '') + ' onclick="recentGo(-1)">&#8249; ' + t('pg.prev') + '</button><span class="sub">' + t('pg.page', { p: recentPage + 1, n: pages }) + '</span><button' + (recentPage >= pages - 1 ? ' disabled' : '') + ' onclick="recentGo(1)">' + t('pg.next') + ' &#8250;</button></div>';
+  if (pages > 1) h += '<div class="pg"><button' + (page <= 0 ? ' disabled' : '') + ' onclick="recentGo(-1)">&#8249; ' + t('pg.prev') + '</button><span class="sub">' + t('pg.page', { p: page + 1, n: pages }) + '</span><button' + (page >= pages - 1 ? ' disabled' : '') + ' onclick="recentGo(1)">' + t('pg.next') + ' &#8250;</button></div>';
   return h + '</section>';
 }
 
@@ -499,9 +505,9 @@ function render() {
     h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section>' + cashTile(d) + '</div><div class="split">';
     h += streamCard('c', t('card.credit'), c) + streamCard('t', t('card.transfer'), tr) + '</div>';
     if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
-    h += catBlock(d) + recentBlock(d);
+    h += catBlock(d) + recentBlock(d, 'out');
   } else {
-    h += '<div id="topslot"></div>' + suggestBlock(d) + incomeBlock(d);
+    h += '<div id="topslot"></div>' + suggestBlock(d) + incomeBlock(d) + recentBlock(d, 'in');
   }
   $('app').innerHTML = icons(h);
   $('topslot').appendChild($('topbar'));
