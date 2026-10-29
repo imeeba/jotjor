@@ -170,3 +170,12 @@ select{-webkit-appearance:none;appearance:none;padding-left:16px!important;paddi
 .mgp input,.mgp select{margin-top:6px}
 
 .ic-monitor{--i:url(../icons/monitor.svg)}.ic-sun{--i:url(../icons/sun.svg)}.ic-moon{--i:url(../icons/moon.svg)}
+
+.skel{padding-top:12px}
+.sk{display:block;height:92px;border-radius:24px;margin-top:12px;background:linear-gradient(90deg,var(--bar) 25%,var(--card) 50%,var(--bar) 75%);background-size:200% 100%;animation:skel 1.4s linear infinite}
+.sk.h{height:128px}
+.skr{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.skr .sk{margin-top:12px}
+@keyframes skel{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}}
+.newver{display:block;width:100%;margin-top:12px;height:40px;border-radius:999px;border:0;background:var(--ink);color:var(--bg);font:inherit;font-weight:600}

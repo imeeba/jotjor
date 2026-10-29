@@ -3,12 +3,13 @@
 (function () {
 'use strict';
 
-var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey';
+var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey', LS_CACHE = 'jotjor_cache';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
 var recentPage = { out: 0, in: 0 }, offset = 0, DATA = null, tab = 'out', catAmt = false, catSubs = false, unOpen = false;
 var mg = null, mgErr = '', mgBusy = false, mgNew = '', MGL = [];
-var cDir = 'out', cBusy = false, rBusy = false;
+var cDir = 'out', cBusy = false;
+var pending = 0, wgen = 0;   // จำนวนการเขียนที่ยังค้าง / ตัวนับรุ่นของการแก้ ใช้ทิ้งผลโหลดที่เก่ากว่าหน้าจอ
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -68,7 +69,7 @@ function api(fn, args, c) {
 }
 
 function guard(e) {
-  if (e && e.auth) { showSetup(errMsg(e)); return true; }
+  if (e && e.auth) { lsDel(LS_CACHE); showSetup(errMsg(e)); return true; }
   return false;
 }
 
@@ -82,8 +83,14 @@ function showSetup(msg) {
   $('sGo').disabled = false;
 }
 
+/* เก็บข้อมูลรอบปัจจุบันล่าสุดไว้ในเครื่อง เปิดแอปมาโชว์ก่อนแล้วค่อยอัปเดต (ล้างตอนออกจากระบบ) */
+function saveCache() { if (DATA && offset === 0) lsSet(LS_CACHE, JSON.stringify(DATA)); }
+function readCache() { try { var j = JSON.parse(lsGet(LS_CACHE)); return j && j.cycle && j.recent ? j : null; } catch (e) { return null; } }
+
 function showMain() {
   $('setup').hidden = true; showView('main');
+  var c = (offset === 0 && !DATA) ? readCache() : null;
+  if (c) { DATA = c; render(); }
   load();
 }
 
@@ -142,29 +149,89 @@ $('themeBtn').onclick = function () {
 applyTheme(lsGet('jotjor_theme'));
 $('logout').onclick = function () {
   if (!window.confirm(t('settings.confirmLogout'))) return;
-  lsDel(LS_URL); lsDel(LS_KEY);
+  lsDel(LS_URL); lsDel(LS_KEY); lsDel(LS_CACHE);
   conn = { url: '', key: '' }; DATA = null;
   showSetup('');
 };
 
 /* ---------- โหลดและแท็ก ---------- */
 
-function load() {
+function load(fresh) {
+  var g = wgen, off = offset;
   $('rf').classList.add('spin');
-  api('dashData', [offset]).then(function (d) {
-    DATA = d; $('rf').classList.remove('spin'); showErr(''); render();
+  api('dashData', [off, fresh === true ? 1 : 0]).then(function (d) {
+    $('rf').classList.remove('spin');
+    if (pending > 0 || g !== wgen || off !== offset) return;   // มีการแก้ที่ใหม่กว่าผลนี้: ทิ้ง ตัวที่แก้เสร็จจะโหลดใหม่เอง
+    DATA = d; showErr(''); saveCache(); render();
   }, function (e) {
     $('rf').classList.remove('spin');
     if (!guard(e)) showErr(t('load.fail', { e: errMsg(e) }));
   });
 }
 
-function setTag(row, sel) {
-  sel.disabled = true;
-  api('setTag', [row, sel.value]).then(load, function (e) {
-    sel.disabled = false;
-    if (!guard(e)) showErr(t('tag.saveFail', { e: errMsg(e) }));
+/* ---------- แก้บนหน้าจอทันที แล้วส่งไปชีตเบื้องหลัง; พลาดแล้วย้อนกลับ ---------- */
+
+function optimistic(patch, send, failMsg, onFail) {
+  var snap = JSON.stringify(DATA);
+  wgen++; pending++;
+  try { patch(DATA); } catch (e) { /* คำนวณในเครื่องพลาด: ปล่อยให้โหลดจากชีตแก้ให้ */ }
+  showErr(''); saveCache(); render();
+  return send().then(function () {
+    pending--; wgen++; load();
+  }, function (e) {
+    pending--; wgen++;
+    if (guard(e)) return;
+    DATA = JSON.parse(snap); saveCache(); render();
+    if (onFail) onFail(e); else showErr(t(failMsg, { e: errMsg(e) }));
+    load();
   });
+}
+
+function mainOf(tg) { var i = String(tg || '').indexOf('/'); return i < 0 ? String(tg || '') : tg.slice(0, i); }
+function spendOf(x) { return x.stream === 'credit' ? (x.dir === 'out' ? x.amount : -x.amount) : (x.dir === 'out' ? x.amount : 0); }
+var SKIP = 'ข้าม', UNTAG = 'ยังไม่แท็ก';   // ต้องตรงกับ SKIP_TAG / UNTAGGED ฝั่ง Apps Script
+
+function addByTag(s, main, v) {
+  var k = main || UNTAG;
+  s.byTag[k] = (s.byTag[k] || 0) + v;
+  if (Math.abs(s.byTag[k]) < 0.005) delete s.byTag[k];
+}
+function addSubPart(d, tg, v) {
+  var main = mainOf(tg), sub = tg.length > main.length ? tg.slice(main.length + 1) : '', map = d.subs && d.subs.cycle;
+  if (!map) return;
+  var m = map[main || UNTAG];
+  if (!m) { if (!sub) return; m = map[main || UNTAG] = { total: 0, parts: [] }; }
+  m.total += v;
+  var p = m.parts.filter(function (x) { return x.name === sub; })[0];
+  if (!p) m.parts.push(p = { name: sub, amt: 0 });
+  p.amt += v;
+  m.parts = m.parts.filter(function (x) { return Math.abs(x.amt) >= 0.005; }).sort(function (a, b) { return b.amt - a.amt; });
+}
+/** บวก/ลบยอดของ stream แล้วคำนวณแถบ checkpoint ใหม่ */
+function addStream(d, stream, delta) {
+  var s = d[stream], step = (d.steps && d.steps[stream]) || d.step || 10000;
+  s.total += delta; d.total.total += delta;
+  var lvl = Math.max(0, Math.floor(s.total / step));
+  s.prev = lvl * step; s.next = (lvl + 1) * step; s.remaining = s.next - s.total; s.progress = (s.total - s.prev) / step;
+}
+
+function patchTag(d, row, nt) {
+  var x = d.recent.filter(function (r) { return r.row === row; })[0];
+  if (!x || x.linked || x.tag === nt) return;
+  var old = x.tag, v = spendOf(x);
+  if (old !== SKIP) { addByTag(d[x.stream], mainOf(old), -v); addSubPart(d, old, -v); }
+  if (nt !== SKIP) { addByTag(d[x.stream], mainOf(nt), v); addSubPart(d, nt, v); }
+  var delta = (nt === SKIP ? 0 : v) - (old === SKIP ? 0 : v);
+  if (delta) addStream(d, x.stream, delta);
+  if (x.dir === 'out') d.untagged += (nt ? 0 : 1) - (old ? 0 : 1);
+  if (old && d.usage[old]) d.usage[old]--;
+  if (nt) d.usage[nt] = (d.usage[nt] || 0) + 1;
+  x.tag = nt;
+}
+
+function setTag(row, sel) {
+  var nt = sel.value;
+  optimistic(function (d) { patchTag(d, row, nt); }, function () { return api('setTag', [row, nt]); }, 'tag.saveFail');
 }
 window.setTag = setTag;
 
@@ -180,30 +247,58 @@ window.toggleCat = toggleCat; window.toggleSubs = toggleSubs; window.toggleUnOpe
 
 function cashDir(d) { cDir = d; $('cout').className = d === 'out' ? 'on' : ''; $('cin').className = d === 'in' ? 'on' : ''; }
 function cashMsg(m) { $('cmsg').textContent = m || ''; }
+function patchCash(d, p) {
+  var a = Number(String(p.amount).replace(/,/g, ''));
+  var at = p.when ? new Date(p.when).getTime() : Date.now();
+  if (offset !== 0 || !(a > 0) || isNaN(at) || at < d.cycle.start || at >= d.cycle.end) return;   // นอกรอบนี้: รอโหลดจากชีต
+  d.recent.push({ row: 0, at: at, stream: 'cash', dir: p.dir, amount: a, merchant: p.merchant.trim(), ref: '', tag: '', linked: false });
+  d.recent.sort(function (x, y) { return y.at - x.at; });
+  if (p.dir === 'out') {
+    addStream(d, 'cash', a); addByTag(d.cash, '', a); d.untagged++;
+    if (fDay.format(new Date(at)) === fDay.format(new Date())) { d.cash.today += a; d.total.today += a; }
+  } else {
+    d.income.cash += a; d.income.cashCount++; d.income.total += a;
+  }
+}
+
 function cashGo() {
   if (cBusy) return;
-  cBusy = true; $('cgo').disabled = true; cashMsg(t('cash.saving'));
-  api('addCash', [{ dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: $('cwhen').value }]).then(function () {
-    cBusy = false; $('cgo').disabled = false;
-    $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = '';
-    cashMsg(t('cash.saved')); closeCash(); load();
-  }, function (e) {
-    cBusy = false; $('cgo').disabled = false;
-    if (!guard(e)) cashMsg(t('cash.fail', { e: errMsg(e) }));
+  var p = { dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: $('cwhen').value };
+  if (!(Number(String(p.amount).replace(/,/g, '')) > 0) || !DATA) {   // ยอดไม่ถูกต้อง: ให้ฝั่งชีตตอบข้อความผิดพลาดตามเดิม
+    cBusy = true; $('cgo').disabled = true; cashMsg(t('cash.saving'));
+    api('addCash', [p]).then(function () {
+      cBusy = false; $('cgo').disabled = false;
+      $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = '';
+      cashMsg(t('cash.saved')); closeCash(); load();
+    }, function (e) {
+      cBusy = false; $('cgo').disabled = false;
+      if (!guard(e)) cashMsg(t('cash.fail', { e: errMsg(e) }));
+    });
+    return;
+  }
+  $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = ''; cashMsg(''); closeCash();
+  optimistic(function (d) { patchCash(d, p); }, function () { return api('addCash', [p]); }, 'cash.fail', function (e) {
+    $('camt').value = p.amount; $('cmer').value = p.merchant; $('cwhen').value = p.when;   // คืนค่าที่กรอกไว้ให้แก้แล้วกดใหม่
+    openCash(); cashMsg(t('cash.fail', { e: errMsg(e) }));
   });
 }
 
 /* ---------- เงินคืน ---------- */
 
+function patchRefund(d, inRow, yes) {
+  var s = d.suggest.filter(function (x) { return x.inRow === inRow; })[0];
+  d.suggest = d.suggest.filter(function (x) { return x.inRow !== inRow; });
+  if (!yes || !s) return;
+  var it = d.recent.filter(function (r) { return r.row === inRow; })[0];
+  if (it) { it.linked = true; it.tag = s.outTag || ''; }
+  addStream(d, 'transfer', -s.amount); addByTag(d.transfer, mainOf(s.outTag), -s.amount); addSubPart(d, s.outTag || '', -s.amount);
+  d.income.account -= s.amount; d.income.accountCount--; d.income.total -= s.amount;
+}
+
 function refundGo(inRow, outRow, yes) {
-  if (rBusy) return;
-  rBusy = true; showErr('');
-  (yes ? api('confirmRefund', [inRow, outRow]) : api('rejectRefund', [inRow])).then(function () {
-    rBusy = false; load();
-  }, function (e) {
-    rBusy = false;
-    if (!guard(e)) { showErr(t('save.fail', { e: errMsg(e) })); load(); }
-  });
+  if (!DATA) return;
+  optimistic(function (d) { patchRefund(d, inRow, yes); },
+    function () { return yes ? api('confirmRefund', [inRow, outRow]) : api('rejectRefund', [inRow]); }, 'save.fail');
 }
 window.refundGo = refundGo;
 
@@ -401,7 +496,7 @@ function unBar(d) {
   if (unOpen) list.forEach(function (x) {
     var nm = x.merchant || t(x.stream === 'credit' ? 'recent.creditName' : (x.stream === 'cash' ? 'recent.cashName' : 'recent.outName'));
     h += '<div class="item"><div class="nm">' + esc(nm) + '</div><div class="am">' + money(x.amount, 2) + '</div><div class="sub">' + fDT.format(new Date(x.at)) + '</div><div></div>'
-      + '<select class="un" onchange="setTag(' + Number(x.row) + ',this)"><option value="">' + t('tag.pick') + '</option>' + tagOpts(d, '') + '</select></div>';
+      + '<select class="un"' + (x.row ? '' : ' disabled') + ' onchange="setTag(' + Number(x.row) + ',this)"><option value="">' + t('tag.pick') + '</option>' + tagOpts(d, '') + '</select></div>';
   });
   return h + '</section>';
 }
@@ -463,7 +558,7 @@ function recentBlock(d, mode) {
     h += '<div class="sub">' + fDT.format(new Date(x.at)) + ' &middot; ' + who + (!spend && x.tag ? ' &middot; ' + esc(x.tag) : '')
       + (refund ? ' &middot; ' + t('recent.cardRefundNote') : '') + (x.linked ? ' &middot; ' + t('recent.linkedNote') : '') + '</div><div></div>';
     if (spend || refund) {
-      h += '<select class="' + (x.tag ? '' : 'un') + '" onchange="setTag(' + Number(x.row) + ',this)"><option value="">' + t('tag.pick') + '</option>';
+      h += '<select class="' + (x.tag ? '' : 'un') + '"' + (x.row ? '' : ' disabled') + ' onchange="setTag(' + Number(x.row) + ',this)"><option value="">' + t('tag.pick') + '</option>';
       h += tagOpts(d, x.tag);
       h += '</select>';
     }
@@ -528,7 +623,7 @@ function busy() { if (mg || mgBusy) return true; var a = document.activeElement;
 applyStrings();
 $('prev').onclick = function () { offset--; load(); };
 $('next').onclick = function () { if (offset < 0) { offset++; load(); } };
-$('rf').onclick = load;
+$('rf').onclick = function () { load(true); };   // ปุ่มรีเฟรชข้ามแคชฝั่งเซิร์ฟเวอร์
 $('cout').onclick = function () { cashDir('out'); };
 $('cin').onclick = function () { cashDir('in'); };
 $('cgo').onclick = cashGo;
@@ -537,6 +632,13 @@ $('tabOut').onclick = function () { tab = 'out'; if (DATA) render(); };
 $('tabIn').onclick = function () { tab = 'in'; if (DATA) render(); };
 document.addEventListener('visibilitychange', function () { if (!document.hidden && !$('main').hidden && !busy()) load(); });
 setInterval(function () { if (!document.hidden && !$('main').hidden && !busy()) load(); }, 60000);
+
+/* หน้าเว็บเองเปิดจากแคชในเครื่อง (sw.js); เมื่อมีเวอร์ชันใหม่ขึ้นปุ่มให้แตะโหลดใหม่ */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(function () { /* ใช้ต่อได้ แค่ไม่มีแคชหน้าเว็บ */ });
+  navigator.serviceWorker.addEventListener('message', function (ev) { if (ev.data === 'jotjor-updated') $('newver').hidden = false; });
+}
+$('newver').onclick = function () { window.location.reload(); };
 
 if (conn.url && conn.key && URL_RE.test(conn.url)) showMain(); else showSetup('');
 })();
