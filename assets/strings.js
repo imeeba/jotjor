@@ -127,7 +127,7 @@ window.STRINGS = {
 
   'mg.title': 'จัดการแท็ก',
   'mg.hint': 'ตัวเลขคือจำนวนรายการที่ใช้แท็กนั้น (ทุกรอบ)',
-  'mg.addSub': '+รอง',
+  'mg.addSub': 'เพิ่มแท็กรอง',
   'mg.rename': 'แก้ชื่อ',
   'mg.delete': 'ลบ',
   'mg.renameTo': 'ชื่อใหม่ของ “{name}”',

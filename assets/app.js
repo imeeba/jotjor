@@ -235,9 +235,9 @@ function mgRow(d, i) {
   var it = MGL[i], dis = mgBusy ? ' disabled' : '';
   var h = '<div class="mgrow' + (it.isMain ? '' : ' s') + '"><span class="mgn">' + (it.isMain ? '' : '&#8627; ') + esc(it.isMain ? it.main : it.sub) + '</span>';
   h += '<span class="sub">' + useOf(d.usage, it) + '</span>';
-  if (it.isMain) h += '<button class="mb"' + dis + ' onclick="mgAddSubOpen(' + i + ')">' + t('mg.addSub') + '</button>';
-  h += '<button class="mb"' + dis + ' onclick="mgRenameOpen(' + i + ')">' + t('mg.rename') + '</button>';
-  h += '<button class="mb"' + dis + ' onclick="mgDelOpen(' + i + ')">' + t('mg.delete') + '</button></div>';
+  if (it.isMain) h += '<button class="mb mba"' + dis + ' onclick="mgAddSubOpen(' + i + ')"><i class="ic ic-add"></i>' + t('mg.addSub') + '</button>';
+  h += '<button class="mb ib"' + dis + ' onclick="mgRenameOpen(' + i + ')" aria-label="' + esc(t('mg.rename')) + '"><i class="ic ic-edit"></i></button>';
+  h += '<button class="mb ib"' + dis + ' onclick="mgDelOpen(' + i + ')" aria-label="' + esc(t('mg.delete')) + '"><i class="ic ic-delete"></i></button></div>';
   return h;
 }
 
@@ -297,7 +297,7 @@ function mgInner(d) {
   return h;
 }
 
-function renderMg() { var b = $('mgbox'); if (b && DATA) b.innerHTML = mgInner(DATA); }
+function renderMg() { var b = $('mgbox'); if (b && DATA) b.innerHTML = icons(mgInner(DATA)); }
 
 function mgOpen(i, mode) {
   mg = { i: i, mode: mode, draft: null, target: '', count: 0 }; mgErr = '';

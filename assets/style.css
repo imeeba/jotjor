@@ -153,6 +153,16 @@ select{-webkit-appearance:none;appearance:none;padding-right:38px!important;back
 .mb.mt.on{background:var(--ink);color:var(--bg)}
 .mb.mt{width:36px;padding:0}.mb.mt .ic{width:18px;height:18px;vertical-align:middle}
 .crow.s .bar i{opacity:.5}
-.setcard input{width:100%;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 14px;margin-top:6px}
-.setcard .pri{width:100%;height:42px;border-radius:999px;border:0;background:var(--ink);color:var(--bg);font:inherit;font-weight:600;margin-top:12px}
-.setcard .pri:disabled{opacity:.4}
+#stCredit,#stTransfer{width:100%;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 14px;margin-top:6px}
+#stSave{width:100%;height:42px;border-radius:999px;border:0;background:var(--ink);color:var(--bg);font:inherit;font-weight:600;margin-top:12px}
+#stSave:disabled{opacity:.4}
+.ic-add{--i:url(../icons/add.svg)}.ic-edit{--i:url(../icons/edit.svg)}.ic-delete{--i:url(../icons/delete.svg)}
+.mb.ib{width:36px;height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.mb.ib .ic{width:18px;height:18px;vertical-align:0}
+.mb.mba{display:inline-flex;align-items:center;gap:4px;flex:none;white-space:nowrap}
+.mb.mba .ic{width:16px;height:16px;vertical-align:0}
+.addrow{align-items:stretch}
+.addrow input,.addrow button{height:42px;margin:0}
+.mgp .btns{align-items:stretch}
+.mgp .btns button{height:42px;margin:0;flex:1 1 0;min-width:0}
+.mgp input,.mgp select{margin-top:6px}
