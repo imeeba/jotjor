@@ -105,9 +105,24 @@ $('setupForm').onsubmit = function (ev) {
 };
 
 var view = 'main';
+function fillSteps() {
+  var st = (DATA && DATA.steps) || {};
+  $('stCredit').value = st.credit || ''; $('stTransfer').value = st.transfer || '';
+  $('stMsg').textContent = '';
+}
+$('stSave').onclick = function () {
+  var a = $('stCredit').value, b = $('stTransfer').value;
+  $('stSave').disabled = true; $('stMsg').textContent = t('cash.saving');
+  api('setSetting', ['step_credit', a]).then(function () { return api('setSetting', ['step_transfer', b]); }).then(function () {
+    $('stSave').disabled = false; $('stMsg').textContent = t('cash.saved'); load();
+  }, function (e) {
+    $('stSave').disabled = false;
+    if (!guard(e)) $('stMsg').textContent = t('cash.fail', { e: errMsg(e) });
+  });
+};
 function showView(v) {
   view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings';
-  if (v === 'settings') { renderMg(); window.scrollTo(0, 0); }
+  if (v === 'settings') { fillSteps(); renderMg(); window.scrollTo(0, 0); }
 }
 $('gear').onclick = function () { showView('settings'); };
 $('setback').onclick = function () { showView('main'); };

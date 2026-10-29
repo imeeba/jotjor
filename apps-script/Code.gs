@@ -22,7 +22,7 @@
  *   DEDUPE_SEC       ตัดรายการซ้ำภายในกี่วินาที                          [ค่าเริ่มต้น 120]
  *   OTP_AS           SMS OTP จ่ายออนไลน์ให้นับเป็น credit หรือ deposit   [ค่าเริ่มต้น credit]
  *
- * ชีต:  Raw = ข้อความดิบ | Tx = รายการที่แยกแล้ว (คอลัมน์ tag เป็น dropdown) | Rules = คำค้น → แท็ก | Tags = แท็กหลัก/รอง | Accounts = บัญชี/บัตร (ชื่อ, เลขท้าย, ชนิด, วันตัดรอบ, บัญชีตัวเอง) | Matches = ผลยืนยัน/ปฏิเสธเงินคืนเข้าบัญชี (สร้างให้เองครั้งแรกที่กด)
+ * ชีต:  Settings = ค่าตั้งใช้ร่วมทุกเครื่อง (key, value เช่น ขีด checkpoint ต่อการ์ด สร้างให้เองครั้งแรกที่บันทึก) | Raw = ข้อความดิบ | Tx = รายการที่แยกแล้ว (คอลัมน์ tag เป็น dropdown) | Rules = คำค้น → แท็ก | Tags = แท็กหลัก/รอง | Accounts = บัญชี/บัตร (ชื่อ, เลขท้าย, ชนิด, วันตัดรอบ, บัญชีตัวเอง) | Matches = ผลยืนยัน/ปฏิเสธเงินคืนเข้าบัญชี (สร้างให้เองครั้งแรกที่กด)
  */
 
 const TZ = 'Asia/Bangkok';
@@ -663,7 +663,8 @@ const API_FNS = {
   addMainTag: function (k, a) { return addMainTag(k, a[0]); },
   addSubTag: function (k, a) { return addSubTag(k, a[0], a[1]); },
   renameTag: function (k, a) { return renameTag(k, a[0], a[1], a[2]); },
-  deleteTag: function (k, a) { return deleteTag(k, a[0], a[1]); }
+  deleteTag: function (k, a) { return deleteTag(k, a[0], a[1]); },
+  setSetting: function (k, a) { return setSetting(k, a[0], a[1]); }
 };
 
 /** คืน object ถ้า body เป็น JSON ที่มี fn (และไม่มี secret ของ MacroDroid) ไม่งั้น null */
@@ -685,6 +686,47 @@ function api_(b) {
     console.error(err);
     return out_({ ok: false, error: String(err.message || err) });
   }
+}
+
+/* ---------- ตั้งค่า: ชีต Settings (key, value) ใช้ร่วมทุกเครื่อง ---------- */
+// key ที่ยอมรับ: step_credit, step_transfer = ขีด checkpoint ของการ์ดแต่ละใบ (บาท) ถ้าไม่ตั้งใช้ CHECKPOINT_STEP
+
+const SETTINGS_HEADERS = ['key', 'value'];
+const SETTING_KEYS = { step_credit: 'num', step_transfer: 'num' };
+
+function settings_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName('Settings');
+  const out = {};
+  if (sh && sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(r => { if (r[0] !== '') out[String(r[0]).trim()] = r[1]; });
+  }
+  return out;
+}
+
+function stepFor_(stream, st) {
+  const v = Number((st || settings_())['step_' + stream]);
+  return v >= 100 ? v : (Number(cfg_('CHECKPOINT_STEP', '10000')) || 10000);
+}
+
+/** key = ชื่อใน SETTING_KEYS, value = ตัวเลข (ว่าง = ลบค่าที่ตั้ง กลับไปใช้ค่าเริ่มต้น) */
+function setSetting(appKey, key, value) {
+  checkAppKey_(appKey);
+  if (!Object.prototype.hasOwnProperty.call(SETTING_KEYS, key)) throw new Error('ไม่รู้จักค่าที่ตั้ง');
+  const raw = String(value == null ? '' : value).replace(/,/g, '').trim();
+  let val = '';
+  if (raw !== '') {
+    val = Number(raw);
+    if (!(val >= 100 && val <= 10000000) || Math.floor(val) !== val) throw new Error('ขีด checkpoint ต้องเป็นจำนวนเต็ม 100 ถึง 10,000,000 บาท');
+  }
+  return withLock_(function () {
+    const sh = ensureSheet_(SpreadsheetApp.getActive(), 'Settings', SETTINGS_HEADERS);
+    const n = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues() : [];
+    let row = 0;
+    for (let i = 0; i < n.length; i++) if (String(n[i][0]).trim() === key) { row = i + 2; break; }
+    if (row) sh.getRange(row, 2).setValue(val);
+    else if (val !== '') sh.appendRow([key, val]);
+    return { ok: true };
+  });
 }
 
 /* ---------- เงินสด: บันทึกจากฟอร์มบนหน้า Dashboard (ใช้ APP_KEY) ---------- */
@@ -862,7 +904,8 @@ function dashData_(offset) {
   const ss = SpreadsheetApp.getActive();
   const now = new Date();
   const b = cycleBounds_(now, offset || 0);
-  const step = Number(cfg_('CHECKPOINT_STEP', '10000')) || 10000;
+  const stt = settings_();
+  const steps = { credit: stepFor_('credit', stt), transfer: stepFor_('transfer', stt), cash: stepFor_('cash', stt) };
   const today = fmt_(now, 'yyyy-MM-dd');
   const rows = ss.getSheetByName('Tx').getDataRange().getValues();
   const S = { credit: newStream_(), transfer: newStream_(), cash: newStream_() };
@@ -925,6 +968,7 @@ function dashData_(offset) {
     s.byTag[tg] = (s.byTag[tg] || 0) + it.v;
     if (it.day === today) s.today += it.v;
     dayMap[it.stream][it.day] = (dayMap[it.stream][it.day] || 0) + it.v;
+    const step = steps[it.stream];
     const ka = Math.floor(s.total / step);
     for (let k = Math.max(Math.floor(before / step) + 1, s.reached + 1); k <= ka; k++) {
       s.checkpoints.push({ k: k * step, at: it.at, merchant: it.merchant, amount: round2_(it.v) });
@@ -949,12 +993,12 @@ function dashData_(offset) {
 
   list.sort((a, c) => c.at - a.at);
   return {
-    now: now.getTime(), step: step, tags: tags_(), tagOptions: tagOptions, unknown: unknown, daily: daily,
+    now: now.getTime(), step: steps.credit, steps: steps, tags: tags_(), tagOptions: tagOptions, unknown: unknown, daily: daily,
     usage: usage, ruleUsage: ruleUsage,
     cycle: { start: b.start.getTime(), end: b.end.getTime(), offset: offset || 0 },
-    credit: finStream_(S.credit, step),
-    transfer: finStream_(S.transfer, step),
-    cash: finStream_(S.cash, step),
+    credit: finStream_(S.credit, steps.credit),
+    transfer: finStream_(S.transfer, steps.transfer),
+    cash: finStream_(S.cash, steps.cash),
     income: { account: round2_(income.account), accountCount: income.accountCount, card: round2_(income.card), cardCount: income.cardCount,
               cash: round2_(income.cash), cashCount: income.cashCount, total: round2_(income.account + income.card + income.cash) },
     suggest: suggest,
@@ -1215,13 +1259,14 @@ function checkCheckpoints() {
   const bk = fmt_(d.cycle.start, 'yyyyMMdd');
   [['credit', '💳 บัตรเครดิต'], ['transfer', '🏦 โอน/สแกนจ่าย']].forEach(p => {
     const s = d[p[0]];
-    const lvl = Math.max(0, Math.floor(s.total / d.step));
+    const stp = d.steps[p[0]];
+    const lvl = Math.max(0, Math.floor(s.total / stp));
     const key = 'CP_' + p[0] + '_' + bk;
     const raw = PROPS.getProperty(key);
     const prev = raw === null ? 0 : Number(raw);
     if (lvl > prev) {
       PROPS.setProperty(key, String(lvl));
-      notify_(p[1] + ' ผ่าน ' + money_(lvl * d.step).replace(/\.00$/, '') + ' บาท แล้ว',
+      notify_(p[1] + ' ผ่าน ' + money_(lvl * stp).replace(/\.00$/, '') + ' บาท แล้ว',
               'รอบนี้ใช้ไป ' + money_(s.total) + ' บาท · อีก ' + money_(s.remaining) + ' ถึง ' + money_(s.next).replace(/\.00$/, ''));
     } else if (raw === null) {
       PROPS.setProperty(key, String(lvl));
