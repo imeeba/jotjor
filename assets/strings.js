@@ -23,8 +23,16 @@ window.STRINGS = {
   'setup.fail': 'เชื่อมต่อไม่ได้: {e}',
 
   'settings.title': 'ตั้งค่า',
-  'settings.connected': 'เชื่อมต่ออยู่กับ Apps Script ของคุณ',
-  'settings.logout': 'ออกจากระบบ (ลบลิงก์และ key ออกจากเครื่องนี้)',
+  'settings.back': 'กลับ',
+  'settings.theme': 'ธีม',
+  'theme.system': 'ตามระบบ',
+  'theme.light': 'สว่าง',
+  'theme.dark': 'มืด',
+  'pg.page': 'หน้า {p}/{n}',
+  'pg.prev': 'ใหม่กว่า',
+  'pg.next': 'เก่ากว่า',
+  'settings.connected': 'เชื่อมต่ออยู่กับ Apps Script ของคุณ การออกจากระบบจะลบลิงก์และ key ออกจากเครื่องนี้ (ข้อมูลในชีตไม่หาย)',
+  'settings.logout': 'ออกจากระบบ',
   'settings.close': 'ปิด',
   'settings.confirmLogout': 'ลบลิงก์และ APP_KEY ออกจากเครื่องนี้ใช่ไหม (ข้อมูลในชีตไม่หาย)',
 

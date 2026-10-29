@@ -6,7 +6,7 @@
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
-var offset = 0, DATA = null, tab = 'out', catAmt = false, catOpen = {}, catNames = [], unOpen = false;
+var recentPage = 0, offset = 0, DATA = null, tab = 'out', catAmt = false, catOpen = {}, catNames = [], unOpen = false;
 var mg = null, mgErr = '', mgBusy = false, mgNew = '', MGL = [];
 var cDir = 'out', cBusy = false, rBusy = false;
 
@@ -75,7 +75,7 @@ function guard(e) {
 /* ---------- หน้าเชื่อมต่อ ---------- */
 
 function showSetup(msg) {
-  $('main').hidden = true; $('setup').hidden = false;
+  $('main').hidden = true; $('settings').hidden = true; $('setup').hidden = false;
   $('sUrl').value = conn.url || '';
   $('sKey').value = '';
   $('sMsg').textContent = msg || '';
@@ -83,7 +83,7 @@ function showSetup(msg) {
 }
 
 function showMain() {
-  $('setup').hidden = true; $('main').hidden = false;
+  $('setup').hidden = true; showView('main');
   load();
 }
 
@@ -104,12 +104,26 @@ $('setupForm').onsubmit = function (ev) {
   });
 };
 
-$('gear').onclick = function () { $('setbox').hidden = !$('setbox').hidden; if (!$('setbox').hidden) $('setbox').open = true; };
+var view = 'main';
+function showView(v) {
+  view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings';
+  if (v === 'settings') { renderMg(); window.scrollTo(0, 0); }
+}
+$('gear').onclick = function () { showView('settings'); };
+$('setback').onclick = function () { showView('main'); };
+function applyTheme(th) {
+  var r = document.documentElement;
+  if (th === 'light' || th === 'dark') r.setAttribute('data-theme', th); else r.removeAttribute('data-theme');
+  Array.prototype.forEach.call(document.querySelectorAll('#themeSeg button'), function (b) { b.className = b.getAttribute('data-th') === (th || 'system') ? 'on' : ''; });
+}
+Array.prototype.forEach.call(document.querySelectorAll('#themeSeg button'), function (b) {
+  b.onclick = function () { var th = b.getAttribute('data-th'); lsSet('jotjor_theme', th); applyTheme(th); };
+});
+applyTheme(lsGet('jotjor_theme'));
 $('logout').onclick = function () {
   if (!window.confirm(t('settings.confirmLogout'))) return;
   lsDel(LS_URL); lsDel(LS_KEY);
   conn = { url: '', key: '' }; DATA = null;
-  $('setbox').hidden = true;
   showSetup('');
 };
 
@@ -134,6 +148,8 @@ function setTag(row, sel) {
 }
 window.setTag = setTag;
 
+function recentGo(n) { recentPage = Math.max(0, recentPage + n); render(); }
+window.recentGo = recentGo;
 function toggleCat() { catAmt = !catAmt; render(); }
 function toggleCatOpen(i) { var n = catNames[i]; if (n != null) catOpen[n] = !catOpen[n]; render(); }
 function toggleUnOpen() { unOpen = !unOpen; render(); }
@@ -410,8 +426,9 @@ function incomeBlock(d) {
 
 function recentBlock(d) {
   var h = '<section class="card"><h2>' + t('recent.title') + '</h2>';
-  var shown = 0;
-  d.recent.forEach(function (x) {
+  var shown = 0, PER = 5, pages = Math.max(1, Math.ceil(d.recent.length / PER));
+  if (recentPage >= pages) recentPage = pages - 1;
+  d.recent.slice(recentPage * PER, recentPage * PER + PER).forEach(function (x) {
     var spend = x.dir === 'out';
     var refund = x.stream === 'credit' && !spend;
     shown++;
@@ -429,6 +446,7 @@ function recentBlock(d) {
     h += '</div>';
   });
   if (!shown) h += '<div class="sub" style="padding:12px 0">' + t('recent.empty') + '</div>';
+  if (pages > 1) h += '<div class="pg"><button' + (recentPage <= 0 ? ' disabled' : '') + ' onclick="recentGo(-1)">&#8249; ' + t('pg.prev') + '</button><span class="sub">' + t('pg.page', { p: recentPage + 1, n: pages }) + '</span><button' + (recentPage >= pages - 1 ? ' disabled' : '') + ' onclick="recentGo(1)">' + t('pg.next') + ' &#8250;</button></div>';
   return h + '</section>';
 }
 
