@@ -126,14 +126,19 @@ function showView(v) {
 }
 $('gear').onclick = function () { showView('settings'); };
 $('setback').onclick = function () { showView('main'); };
+var THEME_IC = { system: 'monitor', light: 'sun', dark: 'moon' };
 function applyTheme(th) {
   var r = document.documentElement;
   if (th === 'light' || th === 'dark') r.setAttribute('data-theme', th); else r.removeAttribute('data-theme');
-  Array.prototype.forEach.call(document.querySelectorAll('#themeSeg button'), function (b) { b.className = b.getAttribute('data-th') === (th || 'system') ? 'on' : ''; });
+  var cur = (th === 'light' || th === 'dark') ? th : 'system';
+  $('themeBtn').innerHTML = '<i class="ic ic-' + THEME_IC[cur] + '"></i>';
+  $('themeBtn').setAttribute('aria-label', t('settings.theme') + ': ' + t('theme.' + cur));
 }
-Array.prototype.forEach.call(document.querySelectorAll('#themeSeg button'), function (b) {
-  b.onclick = function () { var th = b.getAttribute('data-th'); lsSet('jotjor_theme', th); applyTheme(th); };
-});
+$('themeBtn').onclick = function () {
+  var cur = lsGet('jotjor_theme'); cur = (cur === 'light' || cur === 'dark') ? cur : 'system';
+  var th = { system: 'light', light: 'dark', dark: 'system' }[cur];
+  lsSet('jotjor_theme', th); applyTheme(th);
+};
 applyTheme(lsGet('jotjor_theme'));
 $('logout').onclick = function () {
   if (!window.confirm(t('settings.confirmLogout'))) return;
