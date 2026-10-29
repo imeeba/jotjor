@@ -152,5 +152,4 @@ select{-webkit-appearance:none;appearance:none;padding-right:38px!important;back
 .ctl{display:flex;gap:6px}
 .mb.mt.on{background:var(--ink);color:var(--bg)}
 .mb.mt{width:36px;padding:0}.mb.mt .ic{width:18px;height:18px;vertical-align:middle}
-.crow.s .bar{height:5px;border-radius:3px}
-.crow.s .bar i{border-radius:3px}
+.crow.s .bar i{opacity:.5}
