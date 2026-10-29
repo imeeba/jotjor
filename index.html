@@ -23,7 +23,8 @@
 </section>
 
 <section id="main" hidden>
-  <div class="top">
+  <nav class="tabs" id="tabs"><button id="tabOut" class="on" type="button" data-t="tab.out"></button><button id="tabIn" type="button" data-t="tab.in"></button></nav>
+  <div class="top" id="topbar">
     <button id="prev" data-aria="top.prev"><i class="ic ic-prev"></i></button>
     <div class="mid"><div class="cl" id="cyc">&nbsp;</div><div class="sub" id="upd">&nbsp;</div></div>
     <button id="next" data-aria="top.next"><i class="ic ic-next"></i></button>
@@ -39,8 +40,7 @@
     </div>
     <section id="mgbox" class="mgset"></section>
   </details>
-  <nav class="tabs" id="tabs"><button id="tabOut" class="on" type="button" data-t="tab.out"></button><button id="tabIn" type="button" data-t="tab.in"></button></nav>
-  <div id="hold" hidden><section class="card" id="cashbox">
+  <div id="hold" hidden>  <section class="card" id="cashbox">
     <div id="cashhead"></div>
     <button id="cashToggle" class="pri addbtn" type="button" data-t="cash.add"></button>
     <div class="cf" id="cashform" hidden>

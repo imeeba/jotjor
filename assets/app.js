@@ -455,10 +455,10 @@ function render() {
   $('next').disabled = offset >= 0;
   $('tabOut').className = tab === 'out' ? 'on' : ''; $('tabIn').className = tab === 'in' ? 'on' : '';
   $('tabIn').className += (d.suggest && d.suggest.length ? ' dot' : '');
-  $('hold').appendChild($('cashbox'));   // เก็บฟอร์มเงินสดไว้ก่อน innerHTML จะล้างหน้า
+  $('hold').appendChild($('cashbox')); $('hold').appendChild($('topbar'));   // เก็บฟอร์มเงินสดไว้ก่อน innerHTML จะล้างหน้า
   var h = '';
   if (tab === 'out') {
-    h += unBar(d) + suggestBlock(d);
+    h += unBar(d) + suggestBlock(d) + '<div id="topslot"></div>';
     h += '<section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
     h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section><div class="split">';
     h += streamCard('c', t('card.credit'), c) + streamCard('t', t('card.transfer'), tr) + '</div>';
@@ -466,9 +466,10 @@ function render() {
     if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
     h += catBlock(d) + recentBlock(d);
   } else {
-    h += suggestBlock(d) + incomeBlock(d);
+    h += '<div id="topslot"></div>' + suggestBlock(d) + incomeBlock(d);
   }
   $('app').innerHTML = icons(h);
+  $('topslot').appendChild($('topbar'));
   if (tab === 'out') { cashHead(d); $('cashslot').appendChild($('cashbox')); }
   renderMg();
 }
