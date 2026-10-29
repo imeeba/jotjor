@@ -96,3 +96,7 @@ details.card summary{font-weight:600;cursor:pointer}
 .ghost{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:999px;height:40px;padding:0 12px;font:inherit}
 .top .gear{font-size:18px}
 [hidden]{display:none!important}
+.ic{display:inline-block;width:1.2em;height:1.2em;vertical-align:-.2em;background:currentColor;-webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
+.ic-credit{--i:url(../icons/card-credit.svg)}.ic-transfer{--i:url(../icons/card-transfer.svg)}.ic-cash{--i:url(../icons/card-cash.svg)}.ic-sub{--i:url(../icons/sub.svg)}
+.ic-prev{--i:url(../icons/prev.svg)}.ic-next{--i:url(../icons/next.svg)}.ic-refresh{--i:url(../icons/refresh.svg)}.ic-settings{--i:url(../icons/settings.svg)}
+.top .ic{width:22px;height:22px;vertical-align:middle}

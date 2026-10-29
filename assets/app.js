@@ -422,6 +422,11 @@ function recentBlock(d) {
   return h + '</section>';
 }
 
+/* แทนอีโมจิในข้อความด้วยไอคอนจาก icons/ (Phosphor Thin, MIT) */
+function icons(h) {
+  return h.replace(/💳/g, '<i class="ic ic-credit"></i>').replace(/🏦/g, '<i class="ic ic-transfer"></i>').replace(/💵/g, '<i class="ic ic-cash"></i>').replace(/&#8627; |↳ /g, '<i class="ic ic-sub"></i> ');
+}
+
 /* เส้นแนวโน้มรายวันสะสมในการ์ดบัตร/โอน */
 function spark(a) {
   if (!a || a.length < 2) return '';
@@ -448,14 +453,14 @@ function render() {
   if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
   h += cpBlock(t('cp.credit'), c, 'c') + cpBlock(t('cp.transfer'), tr, 't');
   h += tagBlock(d) + subBlock(d) + recentBlock(d) + manageBlock(d);
-  $('app').innerHTML = h;
+  $('app').innerHTML = icons(h);
 }
 
 /* ---------- เริ่มต้น ---------- */
 
 function applyStrings() {
   document.title = t('app.title');
-  Array.prototype.forEach.call(document.querySelectorAll('[data-t]'), function (el) { el.textContent = t(el.getAttribute('data-t')); });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-t]'), function (el) { el.innerHTML = icons(esc(t(el.getAttribute('data-t')))); });
   Array.prototype.forEach.call(document.querySelectorAll('[data-ph]'), function (el) { el.placeholder = t(el.getAttribute('data-ph')); });
   Array.prototype.forEach.call(document.querySelectorAll('[data-aria]'), function (el) { el.setAttribute('aria-label', t(el.getAttribute('data-aria'))); });
 }
