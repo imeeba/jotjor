@@ -44,6 +44,8 @@ window.STRINGS = {
 
   'cash.summary': '💵 บันทึกเงินสด',
   'cash.add': 'เพิ่มรายการเงินสด',
+  'cash.close': 'ปิด',
+  'cat.subs': 'แท็กรอง',
   'cash.share': 'สัดส่วน {p}% ของรายจ่ายรวม',
   'tab.out': 'รายจ่าย',
   'tab.in': 'รายรับ',

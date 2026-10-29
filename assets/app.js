@@ -6,7 +6,7 @@
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
-var recentPage = 0, offset = 0, DATA = null, tab = 'out', catAmt = false, catOpen = {}, catNames = [], unOpen = false;
+var recentPage = 0, offset = 0, DATA = null, tab = 'out', catAmt = false, catSubs = false, unOpen = false;
 var mg = null, mgErr = '', mgBusy = false, mgNew = '', MGL = [];
 var cDir = 'out', cBusy = false, rBusy = false;
 
@@ -151,9 +151,9 @@ window.setTag = setTag;
 function recentGo(n) { recentPage = Math.max(0, recentPage + n); render(); }
 window.recentGo = recentGo;
 function toggleCat() { catAmt = !catAmt; render(); }
-function toggleCatOpen(i) { var n = catNames[i]; if (n != null) catOpen[n] = !catOpen[n]; render(); }
+function toggleSubs() { catSubs = !catSubs; render(); }
 function toggleUnOpen() { unOpen = !unOpen; render(); }
-window.toggleCat = toggleCat; window.toggleCatOpen = toggleCatOpen; window.toggleUnOpen = toggleUnOpen;
+window.toggleCat = toggleCat; window.toggleSubs = toggleSubs; window.toggleUnOpen = toggleUnOpen;
 
 
 /* ---------- เงินสด ---------- */
@@ -166,7 +166,7 @@ function cashGo() {
   api('addCash', [{ dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: $('cwhen').value }]).then(function () {
     cBusy = false; $('cgo').disabled = false;
     $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = '';
-    cashMsg(t('cash.saved')); load();
+    cashMsg(t('cash.saved')); closeCash(); load();
   }, function (e) {
     cBusy = false; $('cgo').disabled = false;
     if (!guard(e)) cashMsg(t('cash.fail', { e: errMsg(e) }));
@@ -345,17 +345,16 @@ function catBlock(d) {
     });
   });
   var names = Object.keys(map);
-  var h = '<section class="card"><div class="chead"><h2>' + t('cat.title') + '</h2><button class="mb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></div>';
+  var h = '<section class="card"><div class="chead"><h2>' + t('cat.title') + '</h2><span class="ctl"><button class="mb mt' + (catSubs ? ' on' : '') + '" onclick="toggleSubs()">' + t('cat.subs') + '</button><button class="mb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
   if (!names.length) return h + '<div class="sub">' + t('cat.empty') + '</div></section>';
   names.sort(function (a, b) { return map[b].total - map[a].total; });
-  catNames = names;
   names.forEach(function (n) {
     var m = map[n], p = total > 0 ? m.total / total * 100 : 0;
     var subs = Object.keys(m.subs).filter(function (x) { return x !== ''; });
-    var open = !!catOpen[n], un = n === 'ยังไม่แท็ก';
+    var open = catSubs && subs.length > 0, un = n === 'ยังไม่แท็ก';
     var val = catAmt ? money(m.total) : p.toFixed(0) + '%';
-    h += '<div class="cat' + (un ? ' un' : '') + '"><div class="crow"' + (subs.length ? ' onclick="toggleCatOpen(' + catNames.indexOf(n) + ')"' : '') + '>'
-      + '<span class="cn">' + esc(un ? t('tag.untagged') : n) + (subs.length ? '<i class="car' + (open ? ' o' : '') + '">&#9662;</i>' : '') + '</span>'
+    h += '<div class="cat' + (un ? ' un' : '') + '"><div class="crow">'
+      + '<span class="cn">' + esc(un ? t('tag.untagged') : n) + '' + '</span>'
       + '<span class="bar c"><i style="width:' + Math.max(0, Math.min(100, p)).toFixed(1) + '%"></i></span>'
       + '<span class="cv">' + val + '</span></div>';
     if (open && subs.length) {
@@ -386,19 +385,19 @@ function unBar(d) {
 function streamCard(cls, label, s, step) {
   var pct = Math.max(0, Math.min(100, s.progress * 100));
   return '<div class="mini ' + cls + '"><div class="lab">' + label + '</div><div class="num">' + money(s.total) + '</div>'
-    + '<div class="sub">' + t('card.todayCount', { today: money(s.today), count: s.count }) + '</div>'
     + '<div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
-    + '<div class="cp"><span>' + money(s.prev, 0) + '</span><span>' + money(s.next, 0) + '</span></div>'
-    + '<div class="sub">' + t('cp.remaining', { n: money(s.remaining), next: money(s.next, 0) }) + '</div></div>';
+    + '<div class="cp"><span>' + money(s.prev, 0) + '</span><span>' + money(s.next, 0) + '</span></div></div>';
 }
 
-function cashHead(d) {
+function cashTile(d) {
   var k = d.cash, p = d.total.total > 0 ? Math.max(0, Math.min(100, k.total / d.total.total * 100)) : 0;
-  $('cashhead').innerHTML = icons('<div class="lab">' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
-    + '<div class="sub">' + esc(t('card.todayCount', { today: money(k.today), count: k.count })) + '</div>'
+  return '<button type="button" class="card cashtile" onclick="openCash()" aria-label="' + esc(t('cash.add')) + '"><div class="lab">' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
     + '<div class="bar c" style="margin-top:10px"><i style="width:' + p.toFixed(1) + '%"></i></div>'
-    + '<div class="sub" style="margin:6px 0 10px">' + esc(t('cash.share', { p: p.toFixed(0) })) + '</div>');
+    + '<div class="sub" style="margin-top:6px">' + p.toFixed(0) + '%</div></button>';
 }
+function openCash() { $('sheet').hidden = false; cashMsg(''); }
+function closeCash() { $('sheet').hidden = true; }
+window.openCash = openCash;
 
 function suggestBlock(d) {
   if (!d.suggest || !d.suggest.length) return '';
@@ -473,14 +472,13 @@ function render() {
   $('next').disabled = offset >= 0;
   $('tabOut').className = tab === 'out' ? 'on' : ''; $('tabIn').className = tab === 'in' ? 'on' : '';
   $('tabIn').className += (d.suggest && d.suggest.length ? ' dot' : '');
-  $('hold').appendChild($('cashbox')); $('hold').appendChild($('topbar'));   // เก็บฟอร์มเงินสดไว้ก่อน innerHTML จะล้างหน้า
+  $('hold').appendChild($('topbar'));   // เก็บแถบหัวไว้ก่อน innerHTML จะล้างหน้า
   var h = '';
   if (tab === 'out') {
     h += unBar(d) + suggestBlock(d) + '<div id="topslot"></div>';
-    h += '<section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
-    h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section><div class="split">';
+    h += '<div class="toprow"><section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
+    h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section>' + cashTile(d) + '</div><div class="split">';
     h += streamCard('c', t('card.credit'), c) + streamCard('t', t('card.transfer'), tr) + '</div>';
-    h += '<div id="cashslot"></div>';
     if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
     h += catBlock(d) + recentBlock(d);
   } else {
@@ -488,7 +486,6 @@ function render() {
   }
   $('app').innerHTML = icons(h);
   $('topslot').appendChild($('topbar'));
-  if (tab === 'out') { cashHead(d); $('cashslot').appendChild($('cashbox')); }
   renderMg();
 }
 
@@ -510,7 +507,7 @@ $('rf').onclick = load;
 $('cout').onclick = function () { cashDir('out'); };
 $('cin').onclick = function () { cashDir('in'); };
 $('cgo').onclick = cashGo;
-$('cashToggle').onclick = function () { var f = $('cashform'); f.hidden = !f.hidden; };
+$('cashClose').onclick = closeCash; $('sheetbg').onclick = closeCash;
 $('tabOut').onclick = function () { tab = 'out'; if (DATA) render(); };
 $('tabIn').onclick = function () { tab = 'in'; if (DATA) render(); };
 document.addEventListener('visibilitychange', function () { if (!document.hidden && !$('main').hidden && !busy()) load(); });
