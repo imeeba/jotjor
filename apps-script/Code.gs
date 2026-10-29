@@ -2,7 +2,7 @@
  * KBank Spend Tracker v3.2 — Google Apps Script
  * แจ้งเตือน K PLUS / SMS KBank (ผ่าน MacroDroid) → Google Sheet → หน้า Dashboard บนมือถือ
  *
- * Dashboard:  <Web app URL>?view=<VIEW_KEY>
+ * Dashboard:  หน้าเว็บแยกบน GitHub Pages เรียก JSON API ของไฟล์นี้ (POST /exec, ใช้ APP_KEY)
  *   - ยอดบัตรเครดิต / โอน-สแกนจ่าย / รวม ตามรอบบิล
  *   - Checkpoint ทุก CHECKPOINT_STEP บาท แยกเครดิต/โอน
  *   - แยกตามแท็ก และเลือกแท็กรายการได้ในหน้า Dashboard
@@ -12,8 +12,7 @@
  *
  * Script Properties (Project Settings > Script properties):
  *   SECRET           รหัสลับใน URL ของ MacroDroid (?secret=...)        [สร้างให้เองตอนรัน setup]
- *   VIEW_KEY         รหัสสำหรับเปิดหน้า Dashboard (?view=...)          [สร้างให้เองตอนรัน setup]
- *   APP_KEY          รหัสสำหรับบันทึกเงินสดและยืนยัน/ปฏิเสธเงินคืนจากหน้า Dashboard (แยกจาก VIEW_KEY)  [ตั้งเองใน Script properties]
+ *   APP_KEY          รหัสสำหรับบันทึกเงินสดและยืนยัน/ปฏิเสธเงินคืนและเข้าหน้าเว็บทั้งหมด (JSON API)  [ตั้งเองใน Script properties]
  *   CYCLE_DAY, SELF_ACCOUNTS  (เลิกใช้หลังรัน migrateAccounts) ย้ายไปอยู่ชีต Accounts แล้ว ใช้เป็น fallback ตอนชีตยังว่างเท่านั้น
  *   SELF_PAIR_SEC    โอนออก+เงินเข้าบัญชีตัวเองยอดเท่ากันภายในกี่วินาทีถึงนับว่าเป็นคู่   [ค่าเริ่มต้น 600]
  *   CHECKPOINT_STEP  ระยะห่างของ checkpoint (บาท)                      [ค่าเริ่มต้น 10000]
@@ -252,13 +251,10 @@ function setup() {
   resetTrigger_('checkCheckpoints', b => b.timeBased().everyMinutes(5));
 
   if (!cfg_('SECRET', '')) PROPS.setProperty('SECRET', Utilities.getUuid().replace(/-/g, ''));
-  if (!cfg_('VIEW_KEY', '')) PROPS.setProperty('VIEW_KEY', Utilities.getUuid().replace(/-/g, ''));
   if (!cfg_('WIDGET_KEY', '')) PROPS.setProperty('WIDGET_KEY', Utilities.getUuid().replace(/-/g, ''));
   console.log('SECRET = ' + cfg_('SECRET', ''));
-  console.log('VIEW_KEY = ' + cfg_('VIEW_KEY', ''));
   console.log('WIDGET_KEY = ' + cfg_('WIDGET_KEY', ''));
   try {
-    console.log('DASHBOARD = ' + ScriptApp.getService().getUrl() + '?view=' + cfg_('VIEW_KEY', ''));
     console.log('WIDGET = ' + ScriptApp.getService().getUrl() + '?widget=' + cfg_('WIDGET_KEY', ''));
   } catch (err) { /* ยังไม่ได้ Deploy */ }
 }
@@ -328,14 +324,10 @@ function doPost(e) {
 
 function doGet(e) {
   const p = (e && e.parameter) || {};
-  if (p.view !== undefined) {
-    const k = cfg_('VIEW_KEY', '');
-    if (!k || p.view !== k) {
-      return HtmlService.createHtmlOutput('<meta name="viewport" content="width=device-width"><p style="font:16px sans-serif;padding:24px">ลิงก์ไม่ถูกต้อง</p>');
-    }
-    return dashboardPage_(k);
+  if (p.view !== undefined) {                        // หน้า Dashboard ย้ายไป GitHub Pages แล้ว
+    return HtmlService.createHtmlOutput('<meta name="viewport" content="width=device-width"><p style="font:16px sans-serif;padding:24px">หน้า Dashboard ย้ายไปที่ GitHub Pages แล้ว</p>');
   }
-  if (p.widget !== undefined) {                      // JSON อ่านอย่างเดียว สำหรับ KWGT (ใช้ WIDGET_KEY แยกจาก VIEW_KEY)
+  if (p.widget !== undefined) {                      // JSON อ่านอย่างเดียว สำหรับ KWGT (ใช้ WIDGET_KEY แยกจาก APP_KEY)
     const wk = cfg_('WIDGET_KEY', '');
     if (!wk || p.widget !== wk) return out_({ ok: false, error: 'unauthorized' });
     try {
@@ -639,20 +631,9 @@ function cycleStart_(now) { return cycleBounds_(now, 0).start; }
 
 /* ---------- Dashboard ---------- */
 
-function checkKey_(key) {                            // หน้าเว็บใหม่ใช้ APP_KEY; VIEW_KEY เดิมใช้ได้จนกว่าจะเลิก
-  const k = cfg_('VIEW_KEY', ''), a = cfg_('APP_KEY', '');
-  if (!((k && key === k) || (a && key === a))) throw new Error('unauthorized');
-}
+function checkKey_(key) { checkAppKey_(key); }          // VIEW_KEY เลิกใช้แล้ว ใช้ APP_KEY อย่างเดียว
 
-function dashboardPage_(key) {
-  const html = DASH_HTML.replace('__KEY__', function () { return JSON.stringify(key); });
-  return HtmlService.createHtmlOutput(html)
-    .setTitle('KBank Spend')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-/** เรียกจากหน้า Dashboard (google.script.run) */
+/** เรียกผ่าน api_ จากหน้าเว็บ */
 function dashData(key, offset) {
   checkKey_(key);
   return dashData_(Number(offset) || 0);
@@ -706,7 +687,7 @@ function api_(b) {
   }
 }
 
-/* ---------- เงินสด: บันทึกจากฟอร์มบนหน้า Dashboard (ใช้ APP_KEY แยกจาก VIEW_KEY) ---------- */
+/* ---------- เงินสด: บันทึกจากฟอร์มบนหน้า Dashboard (ใช้ APP_KEY) ---------- */
 
 function checkAppKey_(key) {
   const k = cfg_('APP_KEY', '');
@@ -1248,12 +1229,6 @@ function checkCheckpoints() {
   });
 }
 
-/** ตั้งรหัสเข้า Dashboard ใหม่ (ถ้าลิงก์หลุด) แล้วดูค่าใหม่ใน log */
-function resetViewKey() {
-  PROPS.setProperty('VIEW_KEY', Utilities.getUuid().replace(/-/g, ''));
-  console.log('VIEW_KEY = ' + cfg_('VIEW_KEY', ''));
-}
-
 /* ---------- Widget (KWGT) ---------- */
 
 /** สร้าง WIDGET_KEY ถ้ายังไม่มี แล้วแสดงลิงก์ widget ใน Execution log (รันเองครั้งเดียวใน editor) */
@@ -1367,461 +1342,3 @@ function testParse() {
 }
 
 /* ---------- หน้า Dashboard (HTML) ---------- */
-
-const DASH_HTML = String.raw`<!doctype html>
-<html lang="th"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>KBank Spend</title>
-<style>
-:root{--bg:#f3f5f4;--card:#fff;--ink:#13201a;--mute:#6a766f;--line:#e2e8e4;--c:#138f55;--csoft:#e2f4ea;--t:#c2610f;--tsoft:#fcebd9;--bar:#e5eae7;--warn:#fff3d2;--warnink:#765000}
-@media (prefers-color-scheme:dark){:root{--bg:#0e1411;--card:#17201b;--ink:#e7efea;--mute:#8d9e95;--line:#25312a;--c:#3ccf86;--csoft:#16301f;--t:#f0a45a;--tsoft:#352718;--bar:#25302a;--warn:#3a3114;--warnink:#f0d487}}
-*{box-sizing:border-box}
-html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Noto Sans Thai",Sarabun,sans-serif;-webkit-text-size-adjust:100%}
-.wrap{max-width:560px;margin:0 auto;padding:0 16px 48px}
-.top{display:flex;align-items:center;gap:8px;position:sticky;top:0;background:var(--bg);padding:12px 0;z-index:5}
-.top .mid{flex:1;text-align:center;min-width:0}
-.top button{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:20px;line-height:1}
-.top button:disabled{opacity:.3}
-.cl{font-weight:600}
-.sub{color:var(--mute);font-size:13px}
-.lab{font-size:13px;color:var(--mute)}
-.spin{animation:sp .8s linear infinite}
-@keyframes sp{to{transform:rotate(360deg)}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:12px}
-h2{font-size:14px;margin:0 0 12px;color:var(--mute);font-weight:600}
-.big{font-size:38px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums;line-height:1.15}
-.big span{font-size:16px;font-weight:500;color:var(--mute)}
-.split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-.mini{border-radius:12px;padding:12px;min-width:0}
-.mini.c{background:var(--csoft)}.mini.t{background:var(--tsoft)}.mini.k{background:var(--bar);grid-column:1/-1}
-.mini .num{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
-.bar{height:10px;background:var(--bar);border-radius:6px;overflow:hidden}
-.bar i{display:block;height:100%;border-radius:6px}
-.bar.c i{background:var(--c)}.bar.t i{background:var(--t)}
-.cp{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--mute);margin-top:6px;font-variant-numeric:tabular-nums}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-.chip{font-size:12px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--mute)}
-.chip b{color:var(--ink)}
-.trow{padding:10px 0;border-top:1px solid var(--line)}
-.trow:first-of-type{border-top:0;padding-top:0}
-.trow .h{display:flex;justify-content:space-between;gap:10px;margin-bottom:6px}
-.trow .tv{font-weight:600;font-variant-numeric:tabular-nums}
-.trow.un .tn{color:var(--warnink);background:var(--warn);padding:0 8px;border-radius:6px}
-.item{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:12px 0;border-top:1px solid var(--line)}
-.item:first-of-type{border-top:0}
-.item .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.item .am{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
-.item .am.in{color:var(--c)}
-.item select{grid-column:1/-1;margin-top:6px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 8px}
-.item select.un{border-color:var(--t)}
-.tog{width:100%;height:40px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;margin-bottom:6px}
-.err,.warnb{margin-top:12px;padding:10px 12px;border-radius:12px;font-size:13px}
-.err{background:#fde4e1;color:#8a1c12}
-.warnb{background:var(--warn);color:var(--warnink)}
-.seg{display:flex;gap:6px;margin-bottom:6px}
-.seg button{flex:1;height:36px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-size:13px}
-.seg button.on{background:var(--csoft);border-color:var(--c);font-weight:600}
-.grp{padding:12px 0;border-top:1px solid var(--line)}
-.gh{display:flex;justify-content:space-between;font-weight:600;margin-bottom:4px;font-variant-numeric:tabular-nums}
-.prow{margin-top:8px}
-.ph{display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;font-variant-numeric:tabular-nums}
-.addrow{display:flex;gap:8px;margin-top:14px}
-.addrow select,.addrow input{height:40px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 8px;min-width:0}
-.addrow input{flex:1}
-.addrow button{height:40px;padding:0 16px;border-radius:10px;border:1px solid var(--c);background:var(--csoft);color:var(--ink);font:inherit;font-weight:600}
-.mgrow{display:flex;align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--line)}
-.mgrow.s{padding-left:18px}
-.mgn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-.mgrow.s .mgn{font-weight:500}
-.mgrow .sub{min-width:20px;text-align:right}
-.mb{height:34px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:13px}
-.mb:disabled{opacity:.4}
-.mgp{background:var(--bg);border-radius:12px;padding:10px;margin:2px 0 8px}
-.mgp input,.mgp select{width:100%;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 8px;margin-top:6px}
-.mgp .txt{font-size:14px}
-.mgp .btns{display:flex;gap:8px;margin-top:10px}
-.mgp .btns button{flex:1;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
-.mgp .btns button:disabled{opacity:.4}
-.mgp .btns .pri{background:var(--csoft);border-color:var(--c);font-weight:600}
-.mgp .btns .dng{background:var(--warn);border-color:var(--t);color:var(--warnink);font-weight:600}
-.mgp .err{margin-top:8px}
-details.card summary{font-weight:600;cursor:pointer}
-.cf input,.cf button{width:100%;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 8px;margin-top:8px}
-.cf .seg{margin-top:10px}
-.cf .pri{background:var(--csoft);border-color:var(--c);font-weight:600}
-.cf button:disabled{opacity:.4}
-.sg{padding:12px 0;border-top:1px solid var(--line)}
-.sg:first-of-type{border-top:0;padding-top:0}
-.sg .btns{display:flex;gap:8px;margin-top:10px}
-.sg .btns button{flex:1;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
-.sg .btns .pri{background:var(--csoft);border-color:var(--c);font-weight:600}
-.sg .btns button:disabled{opacity:.4}
-</style></head>
-<body><div class="wrap">
-<div class="top">
-  <button id="prev" aria-label="รอบก่อนหน้า">&#8249;</button>
-  <div class="mid"><div class="cl" id="cyc">&nbsp;</div><div class="sub" id="upd">&nbsp;</div></div>
-  <button id="next" aria-label="รอบถัดไป">&#8250;</button>
-  <button id="rf" aria-label="รีเฟรช">&#10227;</button>
-</div>
-<div id="err" class="err" hidden></div>
-<details class="card" id="cashbox"><summary>&#128181; บันทึกเงินสด</summary><div class="cf">
-  <div class="seg"><button id="cout" class="on" onclick="cashDir('out')">จ่ายเงินสด</button><button id="cin" onclick="cashDir('in')">รับเงินสด</button></div>
-  <input id="camt" type="text" inputmode="decimal" placeholder="จำนวนเงิน (บาท)" autocomplete="off">
-  <input id="cmer" type="text" maxlength="40" placeholder="ร้าน / รายละเอียด (ไม่บังคับ)" autocomplete="off">
-  <input id="cwhen" type="datetime-local" aria-label="วันเวลา (ว่าง = ตอนนี้)">
-  <input id="ckey" type="password" placeholder="APP_KEY" autocomplete="off">
-  <button id="cgo" class="pri" onclick="cashGo()">บันทึก</button>
-  <div id="cmsg" class="sub" style="margin-top:8px"></div>
-</div></details>
-<div id="app"><div class="sub" style="padding:24px 0">กำลังโหลด...</div></div>
-</div>
-<script>
-var KEY = __KEY__;
-var offset = 0, DATA = null, onlyUn = false, subScope = 'all';
-var mg = null, mgErr = '', mgBusy = false, mgNew = '', MGL = [];
-function $(id){ return document.getElementById(id); }
-function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function money(n, dec){
-  n = Number(n) || 0; var neg = n < 0; n = Math.abs(n);
-  var d = (dec == null) ? ((Math.abs(n - Math.round(n)) > 0.004) ? 2 : 0) : dec;
-  return (neg ? '-' : '') + n.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-var BK = 'Asia/Bangkok';
-var fDay = new Intl.DateTimeFormat('th-TH', {day:'numeric', month:'short', timeZone:BK});
-var fDT = new Intl.DateTimeFormat('th-TH', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', hour12:false, timeZone:BK});
-var fT = new Intl.DateTimeFormat('th-TH', {hour:'2-digit', minute:'2-digit', hour12:false, timeZone:BK});
-
-function showErr(m){ var e = $('err'); e.hidden = !m; e.textContent = m || ''; }
-function errMsg(e){ return e && e.message ? e.message : String(e); }
-
-function load(){
-  $('rf').classList.add('spin');
-  google.script.run
-    .withSuccessHandler(function(d){ DATA = d; $('rf').classList.remove('spin'); showErr(''); render(); })
-    .withFailureHandler(function(e){ $('rf').classList.remove('spin'); showErr('โหลดข้อมูลไม่ได้: ' + errMsg(e)); })
-    .dashData(KEY, offset);
-}
-
-function setTag(row, sel){
-  sel.disabled = true;
-  google.script.run
-    .withSuccessHandler(function(){ load(); })
-    .withFailureHandler(function(e){ sel.disabled = false; showErr('บันทึกแท็กไม่ได้: ' + errMsg(e)); })
-    .setTagFromDash(KEY, row, sel.value);
-}
-
-function toggleUn(){ onlyUn = !onlyUn; render(); }
-function setScopeAll(){ subScope = 'all'; render(); }
-function setScopeCycle(){ subScope = 'cycle'; render(); }
-
-var cDir = 'out', cBusy = false;
-function cashDir(d){ cDir = d; $('cout').className = d === 'out' ? 'on' : ''; $('cin').className = d === 'in' ? 'on' : ''; }
-function cashMsg(m){ $('cmsg').textContent = m || ''; }
-try { $('ckey').value = localStorage.getItem('jotjor_appkey') || ''; } catch (e) {}
-function cashGo(){
-  if (cBusy) return;
-  var key = $('ckey').value.trim();
-  if (!key) { cashMsg('ใส่ APP_KEY ก่อน'); return; }
-  cBusy = true; $('cgo').disabled = true; cashMsg('กำลังบันทึก...');
-  google.script.run
-    .withSuccessHandler(function(){
-      cBusy = false; $('cgo').disabled = false;
-      try { localStorage.setItem('jotjor_appkey', key); } catch (e) {}
-      $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = '';
-      cashMsg('บันทึกแล้ว'); load();
-    })
-    .withFailureHandler(function(e){ cBusy = false; $('cgo').disabled = false; cashMsg('บันทึกไม่ได้: ' + errMsg(e)); })
-    .addCash(key, {dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: $('cwhen').value});
-}
-
-var rBusy = false;
-function refundGo(inRow, outRow, yes){
-  if (rBusy) return;
-  var key = $('ckey').value.trim();
-  if (!key) { showErr('ใส่ APP_KEY ในกล่อง "บันทึกเงินสด" ก่อน แล้วกดอีกครั้ง'); $('cashbox').open = true; return; }
-  rBusy = true; showErr('');
-  var run = google.script.run
-    .withSuccessHandler(function(){
-      rBusy = false;
-      try { localStorage.setItem('jotjor_appkey', key); } catch (e) {}
-      load();
-    })
-    .withFailureHandler(function(e){ rBusy = false; showErr('บันทึกไม่ได้: ' + errMsg(e)); load(); });
-  if (yes) run.confirmRefund(key, inRow, outRow); else run.rejectRefund(key, inRow);
-}
-
-function opt(v, label, cur){ return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(label) + '</option>'; }
-function tagOpts(d, cur){
-  var h = '';
-  d.tags.forEach(function(m){
-    var subs = d.tagOptions[m] || [];
-    if (!subs.length) { h += opt(m, m, cur); return; }
-    h += '<optgroup label="' + esc(m) + '">' + opt(m, m + ' (ไม่ระบุ)', cur);
-    subs.forEach(function(s){ h += opt(m + '/' + s, m + ' / ' + s, cur); });
-    h += '</optgroup>';
-  });
-  return h + opt('ข้าม', 'ข้าม', cur);
-}
-
-function subBlock(d){
-  var data = d.subs[subScope] || {};
-  var names = Object.keys(data).sort(function(a, b){ return data[b].total - data[a].total; });
-  var h = '<section class="card"><h2>สัดส่วนแท็กรอง</h2><div class="seg">'
-    + '<button class="' + (subScope === 'all' ? 'on' : '') + '" onclick="setScopeAll()">ตั้งแต่เริ่มบันทึก</button>'
-    + '<button class="' + (subScope === 'cycle' ? 'on' : '') + '" onclick="setScopeCycle()">รอบนี้</button></div>';
-  if (!names.length) return h + '<div class="sub" style="margin-top:10px">ยังไม่มีรายการที่ใช้แท็กรอง เลือกแท็กแบบ หลัก / รอง ในรายการด้านล่าง</div></section>';
-  names.forEach(function(m){
-    var g = data[m], tot = g.total;
-    h += '<div class="grp"><div class="gh"><span>' + esc(m) + '</span><span>' + money(tot) + '</span></div>';
-    g.parts.forEach(function(p){
-      var pct = tot > 0 ? p.amt / tot * 100 : 0;
-      h += '<div class="prow"><div class="ph"><span>' + esc(p.name || 'ไม่ระบุ') + '</span><span>' + money(p.amt) + ' &middot; ' + pct.toFixed(0) + '%</span></div>'
-        + '<div class="bar c"><i style="width:' + Math.max(1, Math.min(100, pct)).toFixed(1) + '%"></i></div></div>';
-    });
-    h += '</div>';
-  });
-  return h + '</section>';
-}
-
-/* ----- จัดการแท็ก: เพิ่ม / เปลี่ยนชื่อ / ลบ (ยืนยันในหน้า ไม่ใช้ alert/confirm/prompt) ----- */
-
-function useOf(map, it){
-  var n = 0;
-  Object.keys(map || {}).forEach(function(k){
-    if (k === it.full || (it.isMain && k.indexOf(it.full + '/') === 0)) n += map[k];
-  });
-  return n;
-}
-
-function inSetOf(it, t){
-  return it.isMain ? (t === it.main || t.indexOf(it.main + '/') === 0) : (t === it.full);
-}
-
-function mgRow(d, i){
-  var it = MGL[i], dis = mgBusy ? ' disabled' : '';
-  var h = '<div class="mgrow' + (it.isMain ? '' : ' s') + '"><span class="mgn">' + (it.isMain ? '' : '&#8627; ') + esc(it.isMain ? it.main : it.sub) + '</span>';
-  h += '<span class="sub">' + useOf(d.usage, it) + '</span>';
-  if (it.isMain) h += '<button class="mb"' + dis + ' onclick="mgAddSubOpen(' + i + ')">+รอง</button>';
-  h += '<button class="mb"' + dis + ' onclick="mgRenameOpen(' + i + ')">แก้ชื่อ</button>';
-  h += '<button class="mb"' + dis + ' onclick="mgDelOpen(' + i + ')">ลบ</button></div>';
-  return h;
-}
-
-function mgPanel(d, i){
-  if (!mg || mg.i !== i) return '';
-  var it = MGL[i], dis = mgBusy ? ' disabled' : '';
-  var cur = it.isMain ? it.main : it.sub;
-  var h = '<div class="mgp">';
-  if (mg.mode === 'rename') {
-    h += '<div class="lab">ชื่อใหม่ของ &ldquo;' + esc(it.full) + '&rdquo;</div>';
-    h += '<input id="mgin" maxlength="20" value="' + esc(mg.draft != null ? mg.draft : cur) + '">';
-    h += '<div class="btns"><button class="pri"' + dis + ' onclick="mgRenameGo()">บันทึก</button><button' + dis + ' onclick="mgCancel()">ยกเลิก</button></div>';
-  } else if (mg.mode === 'merge') {
-    h += '<div class="txt">ชื่อ &ldquo;' + esc(mg.draft) + '&rdquo; มีอยู่แล้ว จะรวม &ldquo;' + esc(it.full) + '&rdquo; เข้ากับ &ldquo;' + esc(mg.target) + '&rdquo; (' + mg.count + ' รายการ/กฎ จะเปลี่ยนไปใช้แท็กนั้น) ย้อนกลับไม่ได้</div>';
-    h += '<div class="btns"><button class="dng"' + dis + ' onclick="mgMergeGo()">ยืนยันรวม</button><button' + dis + ' onclick="mgCancel()">ยกเลิก</button></div>';
-  } else if (mg.mode === 'addsub') {
-    h += '<div class="lab">เพิ่มแท็กรองใน &ldquo;' + esc(it.main) + '&rdquo;</div>';
-    h += '<input id="mgin" maxlength="20" placeholder="ชื่อแท็กรอง" value="' + esc(mg.draft || '') + '">';
-    h += '<div class="btns"><button class="pri"' + dis + ' onclick="mgAddSubGo()">เพิ่ม</button><button' + dis + ' onclick="mgCancel()">ยกเลิก</button></div>';
-  } else if (mg.mode === 'delete') {
-    var nTx = useOf(d.usage, it), nRu = useOf(d.ruleUsage, it);
-    h += '<div class="txt">ลบ &ldquo;' + esc(it.full) + '&rdquo;' + (it.isMain ? ' (รวมแท็กรองทั้งหมดของมัน)' : '') + '?</div>';
-    if (nTx + nRu > 0) {
-      h += '<div class="sub" style="margin-top:4px">มี ' + nTx + ' รายการ' + (nRu ? ' และ ' + nRu + ' กฎ' : '') + ' ใช้แท็กนี้อยู่</div>';
-      h += '<div class="lab" style="margin-top:8px">ย้ายไปแท็ก</div><select id="mgmv">' + opt('', 'ยังไม่แท็ก (ถ้าเลือกนี้ กฎที่ใช้แท็กนี้จะถูกลบ)', '');
-      d.tags.forEach(function(m){
-        if (!inSetOf(it, m)) h += opt(m, m, '');
-        (d.tagOptions[m] || []).forEach(function(s){
-          var f = m + '/' + s;
-          if (!inSetOf(it, f)) h += opt(f, m + ' / ' + s, '');
-        });
-      });
-      h += opt('ข้าม', 'ข้าม', '') + '</select>';
-    }
-    h += '<div class="btns"><button class="dng"' + dis + ' onclick="mgDelGo()">ลบเลย</button><button' + dis + ' onclick="mgCancel()">ยกเลิก</button></div>';
-  }
-  if (mgErr) h += '<div class="err">' + esc(mgErr) + '</div>';
-  return h + '</div>';
-}
-
-function mgInner(d){
-  MGL = [];
-  var dis = mgBusy ? ' disabled' : '';
-  var h = '<h2>จัดการแท็ก</h2><div class="sub">ตัวเลขคือจำนวนรายการที่ใช้แท็กนั้น (ทุกรอบ)</div>';
-  d.tags.forEach(function(m){
-    var im = MGL.length;
-    MGL.push({full: m, main: m, sub: '', isMain: true});
-    h += mgRow(d, im) + mgPanel(d, im);
-    (d.tagOptions[m] || []).forEach(function(s){
-      var is = MGL.length;
-      MGL.push({full: m + '/' + s, main: m, sub: s, isMain: false});
-      h += mgRow(d, is) + mgPanel(d, is);
-    });
-  });
-  h += '<div class="addrow"><input id="mgnew" maxlength="20" placeholder="แท็กหลักใหม่" value="' + esc(mgNew) + '"><button' + dis + ' onclick="mgAddMain()">เพิ่ม</button></div>';
-  if (!mg && mgErr) h += '<div class="err">' + esc(mgErr) + '</div>';
-  return h;
-}
-
-function manageBlock(d){ return '<section class="card" id="mgbox">' + mgInner(d) + '</section>'; }
-function renderMg(){ var b = $('mgbox'); if (b && DATA) b.innerHTML = mgInner(DATA); }
-
-function mgOpen(i, mode){
-  mg = {i: i, mode: mode, draft: null, target: '', count: 0}; mgErr = '';
-  renderMg();
-  var el = $('mgin'); if (el) el.focus();
-}
-function mgRenameOpen(i){ mgOpen(i, 'rename'); }
-function mgAddSubOpen(i){ mgOpen(i, 'addsub'); }
-function mgDelOpen(i){ mgOpen(i, 'delete'); }
-function mgCancel(){ mg = null; mgErr = ''; renderMg(); }
-function mgDone(){ mg = null; mgErr = ''; mgNew = ''; load(); }
-
-function mgRun(name, args, done){
-  mgBusy = true; mgErr = ''; renderMg();
-  var r = google.script.run
-    .withSuccessHandler(function(res){ mgBusy = false; done(res); })
-    .withFailureHandler(function(e){ mgBusy = false; mgErr = errMsg(e); renderMg(); });
-  r[name].apply(r, [KEY].concat(args));
-}
-
-function mgIn(){ var el = $('mgin'); return el ? el.value : ''; }
-
-function mgRenameGo(){
-  var it = MGL[mg.i]; mg.draft = mgIn();
-  mgRun('renameTag', [it.full, mg.draft, false], function(r){
-    if (r && r.needConfirm) { mg.mode = 'merge'; mg.count = r.count; mg.target = r.target; renderMg(); return; }
-    mgDone();
-  });
-}
-function mgMergeGo(){
-  var it = MGL[mg.i];
-  mgRun('renameTag', [it.full, mg.draft, true], function(){ mgDone(); });
-}
-function mgAddSubGo(){
-  var it = MGL[mg.i]; mg.draft = mgIn();
-  mgRun('addSubTag', [it.main, mg.draft], function(){ mgDone(); });
-}
-function mgDelGo(){
-  var it = MGL[mg.i], sel = $('mgmv');
-  mgRun('deleteTag', [it.full, sel ? sel.value : ''], function(){ mgDone(); });
-}
-function mgAddMain(){
-  var el = $('mgnew'); mgNew = el ? el.value : '';
-  mgRun('addMainTag', [mgNew], function(){ mgDone(); });
-}
-
-function cpBlock(title, s, cls){
-  var pct = Math.max(0, Math.min(100, s.progress * 100));
-  var h = '<section class="card"><h2>' + title + '</h2>';
-  h += '<div class="bar ' + cls + '"><i style="width:' + pct.toFixed(1) + '%"></i></div>';
-  h += '<div class="cp"><span>' + money(s.prev, 0) + '</span><span>อีก ' + money(s.remaining) + ' ถึง ' + money(s.next, 0) + '</span></div>';
-  h += '<div class="chips">';
-  if (!s.checkpoints.length) h += '<span class="chip">ยังไม่ถึง ' + money(DATA.step, 0) + '</span>';
-  s.checkpoints.forEach(function(p){
-    h += '<span class="chip"><b>' + money(p.k, 0) + '</b> &middot; ' + fDT.format(new Date(p.at)) + '</span>';
-  });
-  return h + '</div></section>';
-}
-
-function tagBlock(d){
-  var map = {};
-  ['credit', 'transfer', 'cash'].forEach(function(k){
-    var bt = d[k].byTag;
-    Object.keys(bt).forEach(function(t){
-      var m = map[t] || (map[t] = {c:0, t:0, k:0});
-      if (k === 'credit') m.c += bt[t]; else if (k === 'transfer') m.t += bt[t]; else m.k += bt[t];
-    });
-  });
-  var names = Object.keys(map).filter(function(n){ return Math.abs(map[n].c + map[n].t + map[n].k) > 0.004; });
-  names.sort(function(a, b){ return (map[b].c + map[b].t + map[b].k) - (map[a].c + map[a].t + map[a].k); });
-  var h = '<section class="card"><h2>แยกตามประเภท</h2>';
-  if (!names.length) return h + '<div class="sub">ยังไม่มีรายการ</div></section>';
-  var mx = Math.max(map[names[0]].c + map[names[0]].t + map[names[0]].k, 1);
-  names.forEach(function(n){
-    var m = map[n], tot = m.c + m.t + m.k;
-    h += '<div class="trow' + (n === 'ยังไม่แท็ก' ? ' un' : '') + '"><div class="h"><span class="tn">' + esc(n) + '</span><span class="tv">' + money(tot) + '</span></div>';
-    h += '<div class="bar c"><i style="width:' + Math.max(2, Math.min(100, tot / mx * 100)).toFixed(1) + '%"></i></div>';
-    h += '<div class="sub" style="margin-top:4px">💳 ' + money(m.c) + ' &middot; 🏦 ' + money(m.t) + (m.k ? ' &middot; 💵 ' + money(m.k) : '') + '</div></div>';
-  });
-  return h + '</section>';
-}
-
-function suggestBlock(d){
-  if (!d.suggest || !d.suggest.length) return '';
-  var h = '<section class="card"><h2>เงินเข้านี้เป็นเงินคืนหรือไม่?</h2>';
-  d.suggest.forEach(function(s){
-    h += '<div class="sg"><div class="gh"><span>เงินเข้า +' + money(s.amount, 2) + '</span><span class="sub">🏦 x' + esc(s.ref) + '</span></div>';
-    h += '<div class="sub">เข้า ' + fDT.format(new Date(s.inAt)) + '</div>';
-    h += '<div class="sub">ตรงกับโอนออก ' + fDT.format(new Date(s.outAt)) + (s.outMerchant ? ' &middot; ' + esc(s.outMerchant) : '') + ' &middot; แท็ก ' + esc(s.outTag || 'ยังไม่แท็ก') + '</div>';
-    h += '<div class="btns"><button class="pri" onclick="refundGo(' + s.inRow + ',' + s.outRow + ',true)">ใช่ เป็นเงินคืน</button>';
-    h += '<button onclick="refundGo(' + s.inRow + ',0,false)">ไม่ใช่</button></div></div>';
-  });
-  h += '<div class="sub" style="margin-top:10px">ถ้ายังไม่ตัดสิน จะนับเป็นเงินเข้าปกติไปก่อน กด "ใช่" แล้วยอดโอนและยอดแท็กเดิมจะลดลง และไม่นับเป็นรายรับ</div>';
-  return h + '</section>';
-}
-
-function incomeBlock(d){
-  var n = d.income;
-  var h = '<section class="card"><div class="lab">รายรับ</div><div class="big">' + money(n.total) + '<span> บาท</span></div><div class="split">';
-  h += '<div class="mini c"><div class="lab">🏦 เงินเข้าบัญชี</div><div class="num">' + money(n.account) + '</div><div class="sub">' + n.accountCount + ' รายการ</div></div>';
-  h += '<div class="mini c"><div class="lab">💵 เงินสดรับ</div><div class="num">' + money(n.cash) + '</div><div class="sub">' + n.cashCount + ' รายการ</div></div>';
-  h += '<div class="mini k"><div class="lab">💳 เงินเข้าบัตร (คืนเงิน)</div><div class="num">' + money(n.card) + '</div>';
-  h += '<div class="sub">' + n.cardCount + ' รายการ &middot; หักจากยอดบัตรเครดิตและยอดแท็กแล้ว เป็นรายการเดียวกัน ไม่ใช่เงินเพิ่ม</div></div>';
-  return h + '</div></section>';
-}
-
-function recentBlock(d){
-  var h = '<section class="card"><h2>รายการล่าสุด</h2>';
-  h += '<button class="tog" onclick="toggleUn()">' + (onlyUn ? 'แสดงทั้งหมด' : 'เฉพาะที่ยังไม่แท็ก (' + d.untagged + ')') + '</button>';
-  var shown = 0;
-  d.recent.forEach(function(x){
-    var spend = x.dir === 'out';
-    var refund = x.stream === 'credit' && !spend;
-    if (onlyUn && !(spend && !x.tag)) return;
-    shown++;
-    var nm = x.merchant || (x.stream === 'credit' ? (refund ? 'คืนเงินบัตร' : 'บัตรเครดิต') : (x.stream === 'cash' ? 'เงินสด' : (spend ? 'โอน/ถอน' : (x.linked ? 'เงินคืน' : 'เงินเข้า'))));
-    var who = x.stream === 'cash' ? '💵 เงินสด' : (x.stream === 'credit' ? '💳 บัตร x' : '🏦 บัญชี x') + esc(x.ref);
-    h += '<div class="item"><div class="nm">' + esc(nm) + '</div><div class="am' + (spend ? '' : ' in') + '">' + (spend ? '' : '+') + money(x.amount, 2) + '</div>';
-    h += '<div class="sub">' + fDT.format(new Date(x.at)) + ' &middot; ' + who + (!spend && x.tag ? ' &middot; ' + esc(x.tag) : '')
-      + (refund ? ' &middot; หักยอดเครดิตแล้ว' : '') + (x.linked ? ' &middot; ผูกกับรายการเดิม หักยอดแล้ว' : '') + '</div><div></div>';
-    if (spend || refund) {
-      h += '<select class="' + (x.tag ? '' : 'un') + '" onchange="setTag(' + x.row + ',this)"><option value="">เลือกแท็ก...</option>';
-      h += tagOpts(d, x.tag);
-      h += '</select>';
-    }
-    h += '</div>';
-  });
-  if (!shown) h += '<div class="sub" style="padding:12px 0">ไม่มีรายการ</div>';
-  return h + '</section>';
-}
-
-function render(){
-  var d = DATA, c = d.credit, t = d.transfer, k = d.cash;
-  mg = null; mgErr = '';
-  $('cyc').textContent = fDay.format(new Date(d.cycle.start)) + ' – ' + fDay.format(new Date(d.cycle.end - 86400000)) + (offset === 0 ? ' (รอบนี้)' : '');
-  $('upd').textContent = 'อัปเดต ' + fT.format(new Date(d.now));
-  $('next').disabled = offset >= 0;
-  var h = '<section class="card"><div class="lab">ใช้จ่ายรวม</div><div class="big">' + money(d.total.total) + '<span> บาท</span></div>';
-  h += '<div class="sub">วันนี้ ' + money(d.total.today) + ' บาท</div><div class="split">';
-  h += '<div class="mini c"><div class="lab">💳 บัตรเครดิต</div><div class="num">' + money(c.total) + '</div><div class="sub">วันนี้ ' + money(c.today) + ' &middot; ' + c.count + ' รายการ</div></div>';
-  h += '<div class="mini t"><div class="lab">🏦 โอน/สแกนจ่าย</div><div class="num">' + money(t.total) + '</div><div class="sub">วันนี้ ' + money(t.today) + ' &middot; ' + t.count + ' รายการ</div></div>';
-  h += '<div class="mini k"><div class="lab">💵 เงินสด</div><div class="num">' + money(k.total) + '</div><div class="sub">วันนี้ ' + money(k.today) + ' &middot; ' + k.count + ' รายการ</div></div>';
-  h += '</div></section>';
-  h += suggestBlock(d) + incomeBlock(d);
-  if (d.unknown) h += '<div class="warnb">มี ' + d.unknown + ' รายการที่ระบบแยกประเภทไม่ได้ (ดูชีต Tx)</div>';
-  h += cpBlock('💳 Checkpoint บัตรเครดิต', c, 'c') + cpBlock('🏦 Checkpoint โอน/สแกนจ่าย', t, 't');
-  h += tagBlock(d) + subBlock(d) + recentBlock(d) + manageBlock(d);
-  $('app').innerHTML = h;
-}
-
-$('prev').onclick = function(){ offset--; load(); };
-$('next').onclick = function(){ if (offset < 0) { offset++; load(); } };
-$('rf').onclick = load;
-function busy(){ if (mg || mgBusy) return true; var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
-document.addEventListener('visibilitychange', function(){ if (!document.hidden && !busy()) load(); });
-setInterval(function(){ if (!document.hidden && !busy()) load(); }, 60000);
-load();
-</script></body></html>`;
