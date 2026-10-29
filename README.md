@@ -48,3 +48,7 @@ Jotjor is a personal expense tracker that turns Thai bank app notifications (K P
 - The UI is Thai only; all strings are in `assets/strings.js` so another language can be added later.
 - Setup: enable Pages on `main` / root, paste `apps-script/Code.gs` into your Apps Script project, add an `APP_KEY` script property, create a new deployment version.
 - MIT licensed. No support is promised.
+
+## Credits
+
+ไอคอนใน `icons/` ใช้ [Phosphor Icons](https://phosphoricons.com) (น้ำหนัก Thin) ลิขสิทธิ์ MIT ดู `icons/LICENSE-phosphor.txt` / Icons in `icons/` are from Phosphor Icons (Thin), MIT licensed.

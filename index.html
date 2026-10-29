@@ -3,6 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <title>Jotjor จดจ่อ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body><div class="wrap">
@@ -21,12 +23,13 @@
 </section>
 
 <section id="main" hidden>
-  <div class="top">
-    <button id="prev" data-aria="top.prev">&#8249;</button>
+  <nav class="tabs" id="tabs"><button id="tabOut" class="on" type="button" data-t="tab.out"></button><button id="tabIn" type="button" data-t="tab.in"></button></nav>
+  <div class="top" id="topbar">
+    <button id="prev" data-aria="top.prev"><i class="ic ic-prev"></i></button>
     <div class="mid"><div class="cl" id="cyc">&nbsp;</div><div class="sub" id="upd">&nbsp;</div></div>
-    <button id="next" data-aria="top.next">&#8250;</button>
-    <button id="rf" data-aria="top.refresh">&#10227;</button>
-    <button id="gear" class="gear" data-aria="top.settings">&#9881;</button>
+    <button id="next" data-aria="top.next"><i class="ic ic-next"></i></button>
+    <button id="rf" data-aria="top.refresh"><i class="ic ic-refresh"></i></button>
+    <button id="gear" class="gear" data-aria="top.settings"><i class="ic ic-settings"></i></button>
   </div>
   <div id="err" class="err" hidden></div>
   <details class="card" id="setbox" hidden>
@@ -35,15 +38,20 @@
       <div class="sub" style="margin-top:8px" data-t="settings.connected"></div>
       <button id="logout" data-t="settings.logout"></button>
     </div>
+    <section id="mgbox" class="mgset"></section>
   </details>
-  <details class="card" id="cashbox"><summary data-t="cash.summary"></summary><div class="cf">
-    <div class="seg"><button id="cout" class="on" type="button" data-t="cash.out"></button><button id="cin" type="button" data-t="cash.in"></button></div>
-    <input id="camt" type="text" inputmode="decimal" data-ph="cash.amount" autocomplete="off">
-    <input id="cmer" type="text" maxlength="40" data-ph="cash.merchant" autocomplete="off">
-    <input id="cwhen" type="datetime-local" data-aria="cash.when">
-    <button id="cgo" class="pri" type="button" data-t="cash.save"></button>
-    <div id="cmsg" class="sub" style="margin-top:8px"></div>
-  </div></details>
+  <div id="hold" hidden>  <section class="card" id="cashbox">
+    <div id="cashhead"></div>
+    <button id="cashToggle" class="pri addbtn" type="button" data-t="cash.add"></button>
+    <div class="cf" id="cashform" hidden>
+      <div class="seg"><button id="cout" class="on" type="button" data-t="cash.out"></button><button id="cin" type="button" data-t="cash.in"></button></div>
+      <input id="camt" type="text" inputmode="decimal" data-ph="cash.amount" autocomplete="off">
+      <input id="cmer" type="text" maxlength="40" data-ph="cash.merchant" autocomplete="off">
+      <input id="cwhen" type="datetime-local" data-aria="cash.when">
+      <button id="cgo" class="pri" type="button" data-t="cash.save"></button>
+      <div id="cmsg" class="sub" style="margin-top:8px"></div>
+    </div>
+  </section></div>
   <div id="app"><div class="sub" style="padding:24px 0" data-t="app.loading"></div></div>
 </section>
 
