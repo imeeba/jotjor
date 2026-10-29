@@ -378,7 +378,7 @@ function streamCard(cls, label, s, step) {
 
 function cashHead(d) {
   var k = d.cash, p = d.total.total > 0 ? Math.max(0, Math.min(100, k.total / d.total.total * 100)) : 0;
-  $('cashhead').innerHTML = icons('<div class="lab">💵 ' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
+  $('cashhead').innerHTML = icons('<div class="lab">' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
     + '<div class="sub">' + esc(t('card.todayCount', { today: money(k.today), count: k.count })) + '</div>'
     + '<div class="bar c" style="margin-top:10px"><i style="width:' + p.toFixed(1) + '%"></i></div>'
     + '<div class="sub" style="margin:6px 0 10px">' + esc(t('cash.share', { p: p.toFixed(0) })) + '</div>');
