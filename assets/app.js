@@ -389,8 +389,8 @@ function suggestBlock(d) {
 function incomeBlock(d) {
   var n = d.income;
   var h = '<section class="card"><div class="lab">' + t('income.label') + '</div><div class="big">' + money(n.total) + '<span>' + t('unit.baht') + '</span></div><div class="split">';
-  h += '<div class="mini c"><div class="lab">' + t('income.account') + '</div><div class="num">' + money(n.account) + '</div><div class="sub">' + t('income.count', { n: n.accountCount }) + '</div></div>';
-  h += '<div class="mini c"><div class="lab">' + t('income.cash') + '</div><div class="num">' + money(n.cash) + '</div><div class="sub">' + t('income.count', { n: n.cashCount }) + '</div></div>';
+  h += '<div class="mini n"><div class="lab">' + t('income.account') + '</div><div class="num">' + money(n.account) + '</div><div class="sub">' + t('income.count', { n: n.accountCount }) + '</div></div>';
+  h += '<div class="mini n"><div class="lab">' + t('income.cash') + '</div><div class="num">' + money(n.cash) + '</div><div class="sub">' + t('income.count', { n: n.cashCount }) + '</div></div>';
   h += '<div class="mini k"><div class="lab">' + t('income.card') + '</div><div class="num">' + money(n.card) + '</div>';
   h += '<div class="sub">' + t('income.cardNote', { n: n.cardCount }) + '</div></div>';
   return h + '</div></section>';
@@ -422,18 +422,28 @@ function recentBlock(d) {
   return h + '</section>';
 }
 
+/* เส้นแนวโน้มรายวันสะสมในการ์ดบัตร/โอน */
+function spark(a) {
+  if (!a || a.length < 2) return '';
+  var cum = [], s = 0, i;
+  for (i = 0; i < a.length; i++) { s += Number(a[i]) || 0; cum.push(s); }
+  var mx = cum[cum.length - 1] || 1, pts = [];
+  for (i = 0; i < cum.length; i++) pts.push((i / (cum.length - 1) * 100).toFixed(1) + ',' + (30 - cum[i] / mx * 28).toFixed(1));
+  return '<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + pts.join(' ') + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
+}
+
 function render() {
   var d = DATA, c = d.credit, tr = d.transfer, k = d.cash;
   mg = null; mgErr = '';
   $('cyc').textContent = fDay.format(new Date(d.cycle.start)) + ' – ' + fDay.format(new Date(d.cycle.end - 86400000)) + (offset === 0 ? t('top.current') : '');
   $('upd').textContent = t('top.updated', { time: fT.format(new Date(d.now)) });
   $('next').disabled = offset >= 0;
-  var h = '<section class="card"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
-  h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div><div class="split">';
-  h += '<div class="mini c"><div class="lab">' + t('card.credit') + '</div><div class="num">' + money(c.total) + '</div><div class="sub">' + t('card.todayCount', { today: money(c.today), count: c.count }) + '</div></div>';
-  h += '<div class="mini t"><div class="lab">' + t('card.transfer') + '</div><div class="num">' + money(tr.total) + '</div><div class="sub">' + t('card.todayCount', { today: money(tr.today), count: tr.count }) + '</div></div>';
+  var h = '<section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
+  h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section><div class="split">';
+  h += '<div class="mini c"><div class="lab">' + t('card.credit') + '</div><div class="num">' + money(c.total) + '</div><div class="sub">' + t('card.todayCount', { today: money(c.today), count: c.count }) + '</div>' + spark(d.daily && d.daily.credit) + '</div>';
+  h += '<div class="mini t"><div class="lab">' + t('card.transfer') + '</div><div class="num">' + money(tr.total) + '</div><div class="sub">' + t('card.todayCount', { today: money(tr.today), count: tr.count }) + '</div>' + spark(d.daily && d.daily.transfer) + '</div>';
   h += '<div class="mini k"><div class="lab">' + t('card.cash') + '</div><div class="num">' + money(k.total) + '</div><div class="sub">' + t('card.todayCount', { today: money(k.today), count: k.count }) + '</div></div>';
-  h += '</div></section>';
+  h += '</div>';
   h += suggestBlock(d) + incomeBlock(d);
   if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
   h += cpBlock(t('cp.credit'), c, 'c') + cpBlock(t('cp.transfer'), tr, 't');
