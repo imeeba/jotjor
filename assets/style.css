@@ -99,7 +99,7 @@ details.card summary{font-weight:600;cursor:pointer}
 .top .gear{font-size:18px}
 [hidden]{display:none!important}
 .ic{display:inline-block;width:1.2em;height:1.2em;vertical-align:-.2em;background:currentColor;-webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
-.ic-credit{--i:url(../icons/card-credit.svg)}.ic-transfer{--i:url(../icons/card-transfer.svg)}.ic-cash{--i:url(../icons/card-cash.svg)}.ic-sub{--i:url(../icons/sub.svg)}
+.ic-credit{--i:url(../icons/card-credit.svg)}.ic-transfer{--i:url(../icons/card-transfer.svg)}.ic-cash{--i:url(../icons/card-cash.svg)}.ic-sub{--i:url(../icons/sub.svg)}.ic-subs{--i:url(../icons/subs.svg)}
 .ic-prev{--i:url(../icons/prev.svg)}.ic-next{--i:url(../icons/next.svg)}.ic-refresh{--i:url(../icons/refresh.svg)}.ic-settings{--i:url(../icons/settings.svg)}
 .top .ic{width:22px;height:22px;vertical-align:middle}
 .tabs{display:flex;gap:6px;padding:4px;background:var(--pill);border-radius:999px;margin-top:12px}
@@ -151,3 +151,4 @@ select{-webkit-appearance:none;appearance:none;padding-right:38px!important;back
 .sheetbox{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:560px;border-radius:24px 24px 0 0;max-height:88vh;overflow:auto;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
 .ctl{display:flex;gap:6px}
 .mb.mt.on{background:var(--ink);color:var(--bg)}
+.mb.mt{width:36px;padding:0}.mb.mt .ic{width:18px;height:18px;vertical-align:middle}
