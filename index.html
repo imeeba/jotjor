@@ -6,7 +6,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
 <script>try{var th=localStorage.getItem("jotjor_theme");if(th==="light"||th==="dark")document.documentElement.setAttribute("data-theme",th)}catch(e){}</script>
-<link rel="stylesheet" href="assets/style.css?v=8">
+<link rel="stylesheet" href="assets/style.css?v=9">
 </head>
 <body><div class="wrap">
 
@@ -56,12 +56,19 @@
   <section class="card setcard"><h2 data-t="settings.theme"></h2>
     <div class="seg" id="themeSeg"><button type="button" data-th="system" data-t="theme.system"></button><button type="button" data-th="light" data-t="theme.light"></button><button type="button" data-th="dark" data-t="theme.dark"></button></div>
   </section>
+  <section class="card setcard"><h2 data-t="settings.cp"></h2>
+    <div class="sub" data-t="settings.cpHint"></div>
+    <div class="lab" style="margin-top:10px" data-t="card.credit"></div><input id="stCredit" type="text" inputmode="numeric" autocomplete="off">
+    <div class="lab" style="margin-top:10px" data-t="card.transfer"></div><input id="stTransfer" type="text" inputmode="numeric" autocomplete="off">
+    <button id="stSave" class="pri" type="button" data-t="cash.save"></button>
+    <div id="stMsg" class="sub" style="margin-top:8px"></div>
+  </section>
   <section class="card setcard" id="mgbox"></section>
   <section class="card setcard"><div class="sub" data-t="settings.connected"></div>
     <button id="logout" class="dng" type="button" data-t="settings.logout"></button></section>
 </section>
 
 </div>
-<script src="assets/strings.js?v=8"></script>
-<script src="assets/app.js?v=8"></script>
+<script src="assets/strings.js?v=9"></script>
+<script src="assets/app.js?v=9"></script>
 </body></html>
