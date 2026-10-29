@@ -338,14 +338,18 @@ function catBlock(d) {
     var bt = d[k].byTag;
     Object.keys(bt).forEach(function (tg) {
       var v = bt[tg]; if (Math.abs(v) < 0.005) return;
-      var i = tg.indexOf('/'), main = i < 0 ? tg : tg.slice(0, i), sub = i < 0 ? '' : tg.slice(i + 1);
+      var main = tg;
       var m = map[main] || (map[main] = { total: 0, subs: {} });
       m.total += v; total += v;
-      m.subs[sub] = (m.subs[sub] || 0) + v;
     });
   });
+  Object.keys(map).forEach(function (n) {   // แท็กรองมาจาก d.subs.cycle (byTag เก็บแค่แท็กหลัก)
+    var g = d.subs && d.subs.cycle && d.subs.cycle[n];
+    if (!g || !g.parts.some(function (p) { return p.name !== ''; })) return;
+    g.parts.forEach(function (p) { map[n].subs[p.name] = (map[n].subs[p.name] || 0) + p.amt; });
+  });
   var names = Object.keys(map);
-  var h = '<section class="card"><div class="chead"><h2>' + t('cat.title') + '</h2><span class="ctl"><button class="mb mt' + (catSubs ? ' on' : '') + '" onclick="toggleSubs()">' + t('cat.subs') + '</button><button class="mb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
+  var h = '<section class="card"><div class="chead"><h2>' + t('cat.title') + '</h2><span class="ctl"><button class="mb mt' + (catSubs ? ' on' : '') + '" onclick="toggleSubs()" aria-pressed="' + catSubs + '" aria-label="' + esc(t('cat.subs')) + '"><i class="ic ic-subs"></i></button><button class="mb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
   if (!names.length) return h + '<div class="sub">' + t('cat.empty') + '</div></section>';
   names.sort(function (a, b) { return map[b].total - map[a].total; });
   names.forEach(function (n) {
