@@ -45,7 +45,7 @@ function clearTagCache_() { TAG_CACHE_ = null; }
 
 /** ค่าตั้งต้นเดิม (Script property TAGS หรือค่า default) ใช้ตอนย้ายข้อมูล และเป็น fallback ถ้าชีต Tags ยังไม่มีแท็กหลัก */
 function legacyTags_() {
-  return cfg_('TAGS', 'อาหาร,เดท,AI,ส่วนตัว,ร้าน,ฟาร์ม').split(',').map(s => s.trim()).filter(Boolean);
+  return cfg_('TAGS', 'อาหาร,เดินทาง,ช้อปปิ้ง,บิล,บันเทิง,อื่นๆ').split(',').map(s => s.trim()).filter(Boolean);
 }
 
 /** อ่านชีต Tags: mains = แถวที่ sub ว่าง (ตามลำดับแถว), subs = { main: [sub...] }, subRows = แถวแท็กรองตามลำดับแถว */
@@ -232,16 +232,8 @@ function setup() {
   const tx = ensureSheet_(ss, 'Tx', TX_HEADERS);
   if (tx.getRange(1, COL.tag + 1).getValue() !== 'tag') tx.getRange(1, COL.tag + 1).setValue('tag');
 
-  const rules = ensureSheet_(ss, 'Rules', ['keyword', 'tag']);
-  if (rules.getLastRow() === 1) {
-    [['ANTHROPIC', 'AI'], ['CLAUDE', 'AI'], ['OPENAI', 'AI'], ['CHATGPT', 'AI'],
-     ['ELEVENLABS', 'AI'], ['CURSOR', 'AI'], ['MIDJOURNEY', 'AI'], ['GITHUB', 'AI']]
-      .forEach(r => rules.appendRow(r));
-  }
-  const tg = ensureSheet_(ss, 'Tags', ['main', 'sub']);
-  if (tg.getLastRow() === 1) {
-    [['เดท', 'พิม'], ['เดท', 'แนท'], ['เดท', 'แพร']].forEach(r => tg.appendRow(r));
-  }
+  ensureSheet_(ss, 'Rules', ['keyword', 'tag']);
+  ensureSheet_(ss, 'Tags', ['main', 'sub']);   // แท็กหลักตั้งต้นเติมให้ใน migrateTags_ จาก legacyTags_
   clearTagCache_();
   migrateTags_();
   applyTagValidation_(ss);
@@ -252,11 +244,91 @@ function setup() {
 
   if (!cfg_('SECRET', '')) PROPS.setProperty('SECRET', Utilities.getUuid().replace(/-/g, ''));
   if (!cfg_('WIDGET_KEY', '')) PROPS.setProperty('WIDGET_KEY', Utilities.getUuid().replace(/-/g, ''));
+  if (!cfg_('APP_KEY', '')) PROPS.setProperty('APP_KEY', Utilities.getUuid().replace(/-/g, ''));
   console.log('SECRET = ' + cfg_('SECRET', ''));
   console.log('WIDGET_KEY = ' + cfg_('WIDGET_KEY', ''));
   try {
     console.log('WIDGET = ' + ScriptApp.getService().getUrl() + '?widget=' + cfg_('WIDGET_KEY', ''));
   } catch (err) { /* ยังไม่ได้ Deploy */ }
+}
+
+/* ---------- เมนู Jotjor ในชีต (สำหรับผู้ใช้ทั่วไป ไม่ต้องเปิด editor) ---------- */
+
+const VERSION = '1.0.0';
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('Jotjor')
+    .addItem('1. ตั้งค่าครั้งแรก', 'firstRun')
+    .addItem('2. ทดสอบการรับข้อความ', 'sendTest')
+    .addItem('ดูลิงก์และรหัสของฉัน', 'showLinks')
+    .addItem('ตรวจสถานะ', 'showStatus')
+    .addToUi();
+}
+
+/** URL ของ Web app ที่ Deploy แล้ว (ลงท้าย /exec) ไม่งั้นคืน '' */
+function execUrl_() {
+  try {
+    const u = ScriptApp.getService().getUrl() || '';
+    return /\/exec$/.test(u) ? u : '';
+  } catch (err) { return ''; }
+}
+
+function copyBox_(label, value) {
+  const id = 'f' + Math.random().toString(36).slice(2, 8);
+  const v = String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  return '<p style="margin:14px 0 4px;font-weight:600">' + label + '</p>' +
+    '<input id="' + id + '" readonly value="' + v + '" style="width:100%;box-sizing:border-box;padding:8px;font:13px monospace" onclick="this.select()">' +
+    '<button style="margin-top:4px" onclick="var e=document.getElementById(\'' + id + '\');e.select();document.execCommand(\'copy\');this.textContent=\'คัดลอกแล้ว\'">คัดลอก</button>';
+}
+
+/** แสดงลิงก์/รหัสของผู้ใช้เอง (อยู่ในชีตของเขาเอง ไม่ผ่านใคร) */
+function showLinks() {
+  const url = execUrl_();
+  let html = '<div style="font:14px sans-serif;padding:4px 8px">';
+  if (!cfg_('SECRET', '') || !cfg_('APP_KEY', '')) {
+    html += '<p>ยังไม่ได้ตั้งค่าครั้งแรก กดเมนู Jotjor &gt; 1. ตั้งค่าครั้งแรก ก่อน</p></div>';
+  } else if (!url) {
+    html += '<p>ยังไม่ได้ Deploy เป็น Web app (หรือลิงก์ไม่ลงท้าย /exec) ทำตามขั้น Deploy ใน guide แล้วเปิดเมนูนี้อีกครั้ง</p></div>';
+  } else {
+    html += '<p style="color:#b00">ห้ามแชร์ลิงก์และรหัสเหล่านี้ให้ใคร</p>' +
+      copyBox_('ลิงก์สำหรับ MacroDroid', url + '?secret=' + cfg_('SECRET', '') + '&app=kplus') +
+      copyBox_('ลิงก์ Web app (วางในหน้าเว็บ Jotjor)', url) +
+      copyBox_('APP_KEY (วางในหน้าเว็บ Jotjor)', cfg_('APP_KEY', '')) + '</div>';
+  }
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(420), 'ลิงก์และรหัสของฉัน');
+}
+
+/** ขั้นตอนตั้งค่าครั้งแรก: สร้างชีต/รหัส แล้วแสดงลิงก์ (รันซ้ำได้ ไม่เปลี่ยนรหัสเดิม) */
+function firstRun() {
+  setup();
+  showLinks();
+}
+
+/** ส่งข้อความตัวอย่างเข้าท่อเดียวกับ MacroDroid เพื่อเช็กว่าชีตรับ-แยก-บันทึกได้ (รายการทดสอบถูกติดแท็ก ข้าม ไม่นับยอด) */
+function sendTest() {
+  const ui = SpreadsheetApp.getUi();
+  if (!cfg_('SECRET', '')) { ui.alert('ยังไม่ได้ตั้งค่าครั้งแรก กดเมนู Jotjor > 1. ตั้งค่าครั้งแรก ก่อน'); return; }
+  const text = 'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-0000 จำนวนเงิน 1.00 บาท ที่ JOTJOR TEST';
+  const res = JSON.parse(doPost({ parameter: { secret: cfg_('SECRET', ''), app: 'test' }, postData: { contents: text } }).getContent());
+  if (res.duplicate) { ui.alert('เพิ่งทดสอบไปเมื่อสักครู่ รอ 2 นาทีแล้วกดใหม่'); return; }
+  if (!res.ok || !res.parsed) { ui.alert('ชีตรับข้อความได้แต่แยกไม่ได้ ดูแท็บ Raw แล้วแจ้งผ่าน GitHub Issues'); return; }
+  SpreadsheetApp.getActive().getSheetByName('Tx').getRange(res.row, COL.tag + 1).setValue(SKIP_TAG);
+  ui.alert('ผ่าน: มีรายการทดสอบ 1 บาทที่แท็บ Tx (ติดแท็ก ข้าม ลบทิ้งได้)');
+}
+
+/** สรุปสถานะ: เวอร์ชัน, Deploy แล้วหรือยัง, ข้อความล่าสุดที่ได้รับจากมือถือ */
+function showStatus() {
+  const ss = SpreadsheetApp.getActive();
+  const raw = ss.getSheetByName('Raw');
+  let last = 'ยังไม่เคยได้รับ';
+  if (raw && raw.getLastRow() > 1) {
+    const r = raw.getRange(raw.getLastRow(), 1, 1, 2).getValues()[0];
+    last = fmt_(r[0], 'd/M/yyyy HH:mm') + ' (' + (r[1] || '-') + ')';
+  }
+  SpreadsheetApp.getUi().alert('Jotjor เวอร์ชัน ' + VERSION +
+    '\nตั้งค่าครั้งแรก: ' + (cfg_('SECRET', '') && cfg_('APP_KEY', '') ? 'แล้ว' : 'ยังไม่ได้ทำ') +
+    '\nDeploy Web app: ' + (execUrl_() ? 'แล้ว' : 'ยังไม่ได้ทำ') +
+    '\nข้อความล่าสุดที่ได้รับ: ' + last);
 }
 
 function resetTrigger_(handler, build) {
