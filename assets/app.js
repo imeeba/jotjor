@@ -3,6 +3,7 @@
 (function () {
 'use strict';
 
+var APP_VER = 'build 20';   // ให้ตรงกับ ?v= ใน index.html
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey', LS_CACHE = 'jotjor_cache';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
@@ -264,22 +265,29 @@ var view = 'main';
 function showView(v) {
   var same = v === view;
   function swap() {
-    view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings'; $('stream').hidden = v !== 'stream'; $('ov').hidden = v !== 'ov';
+    view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings'; $('stream').hidden = v !== 'stream'; $('ov').hidden = v !== 'ov'; $('about').hidden = v !== 'about';
     if (v === 'settings') { renderCy(); renderCp(); renderAcc(); renderMg(); }
     if (v === 'main' && !same && DATA) { animMain = true; render(); }
     if (v !== 'main') window.scrollTo(0, 0);
+    miniSync();
   }
   if (same || RM || !document.startViewTransition) { swap(); return; }
   document.documentElement.setAttribute('data-nav', v === 'main' ? 'back' : 'fwd');
   document.startViewTransition(swap);
 }
 /* หน้าย่อย (ตั้งค่า / ลงลึก) ใส่ใน history ให้ปุ่มย้อนกลับของมือถือกลับหน้าหลัก ไม่ใช่ปิดแอป */
-function openSub(v) { if (view === 'main') history.pushState({ v: v }, ''); else history.replaceState({ v: v }, ''); showView(v); }
+function openSub(v) { if (view === 'main' || (view === 'settings' && v === 'about')) history.pushState({ v: v }, ''); else history.replaceState({ v: v }, ''); showView(v); }
 function closeSub() { if (history.state && history.state.v) history.back(); else showView('main'); }
-window.addEventListener('popstate', function () { if (view !== 'main' && $('setup').hidden) showView('main'); });
+window.addEventListener('popstate', function () {
+  if (view === 'main' || !$('setup').hidden) return;
+  var s = history.state && history.state.v;
+  showView(s === 'settings' ? 'settings' : 'main');   // หน้าเกี่ยวกับเปิดจากตั้งค่า: ย้อนกลับไปตั้งค่า
+});
 if (history.state && history.state.v) history.replaceState(null, '');
 $('gear').onclick = function () { openSub('settings'); };
 $('setback').onclick = closeSub;
+$('aboutRow').onclick = function () { openSub('about'); };
+$('aboutback').onclick = closeSub;
 var THEME_IC = { system: 'monitor', light: 'sun', dark: 'moon' };
 function applyTheme(th) {
   var r = document.documentElement;
@@ -722,7 +730,7 @@ function catBlock(d) {
     g.parts.forEach(function (p) { map[n].subs[p.name] = (map[n].subs[p.name] || 0) + p.amt; });
   });
   var names = Object.keys(map);
-  var h = '<section class="card"><div class="chead"><h2>' + t('cat.title') + '</h2><span class="ctl"><button class="mb mt' + (catSubs ? ' on' : '') + '" onclick="toggleSubs()" aria-pressed="' + catSubs + '" aria-label="' + esc(t('cat.subs')) + '"><i class="ic ic-subs"></i></button><button class="mb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
+  var h = '<section class="card"><div class="chead"><h2>' + t('cat.title') + '</h2><span class="ctl"><button class="rb' + (catSubs ? ' on' : '') + '" onclick="toggleSubs()" aria-pressed="' + catSubs + '" aria-label="' + esc(t('cat.subs')) + '"><i class="ic ic-subs"></i></button><button class="rb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
   if (!names.length) return h + '<div class="sub">' + t('cat.empty') + '</div></section>';
   names.sort(function (a, b) { return map[b].total - map[a].total; });
   names.forEach(function (n) {
@@ -763,15 +771,15 @@ function streamCard(cls, label, s, stream) {
   var pct = Math.max(0, Math.min(100, s.progress * 100));
   return '<div class="mini ' + cls + ' tap" role="button" tabindex="0" onclick="openStream(\'' + stream + '\')" aria-label="' + esc(t('drill.open')) + '">'
     + '<i class="ic ic-next go"></i><div class="lab">' + label + '</div><div class="num">' + money(s.total) + '</div>'
-    + '<div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
-    + '<div class="cp"><span>' + money(s.prev) + '</span><span>' + money(s.next) + '</span></div></div>';
+    + '<div class="foot"><div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
+    + '<div class="cp"><span>' + money(s.prev) + '</span><span>' + money(s.next) + '</span></div></div></div>';
 }
 
 function cashTile(d) {
   var k = d.cash, p = d.total.total > 0 ? Math.max(0, Math.min(100, k.total / d.total.total * 100)) : 0;
   return '<button type="button" class="card cashtile" onclick="openCash()" aria-label="' + esc(t('cash.add')) + '"><div class="lab">' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
-    + '<div class="bar c" style="margin-top:10px"><i style="width:' + p.toFixed(1) + '%"></i></div>'
-    + '<div class="sub" style="margin-top:6px">' + p.toFixed(0) + '%</div></button>';
+    + '<div class="foot"><div class="bar c"><i style="width:' + p.toFixed(1) + '%"></i></div>'
+    + '<div class="cp"><span>' + p.toFixed(0) + '%</span></div></div></button>';
 }
 function openCash() { sheetOpen('sheet'); cashMsg(''); }
 function closeCash(cb) { sheetClose('sheet', cb); }
@@ -862,8 +870,37 @@ function incomeBlock(d) {
   return h + '</div></section>';
 }
 
+/* ----- เรียงรายการล่าสุด: new = ล่าสุด, desc = ยอดมากไปน้อย, asc = ยอดน้อยไปมาก (จำในเครื่อง ใช้ทั้งหน้าหลักและหน้าลงลึก) ----- */
+var RSORT = { new: 'sort.new', desc: 'sort.desc', asc: 'sort.asc' };
+var rsort = RSORT[lsGet('jotjor_sort')] ? lsGet('jotjor_sort') : 'new';
+function sortList(list) {
+  if (rsort === 'new') return list;
+  var k = rsort === 'desc' ? -1 : 1;
+  return list.slice().sort(function (a, b) { return (a.amount - b.amount) * k || b.at - a.at; });
+}
+function sortOpen() {
+  var h = '';
+  Object.keys(RSORT).forEach(function (k) {
+    var on = k === rsort;
+    h += '<button type="button" class="pko' + (on ? ' on' : '') + '" onclick="sortSet(\'' + k + '\')"><span>' + t(RSORT[k]) + '</span>' + (on ? '<i class="ic ic-check"></i>' : '') + '</button>';
+  });
+  PK = null;
+  $('pkTitle').textContent = t('sort.title');
+  $('pkList').innerHTML = h;
+  sheetOpen('picker');
+}
+function sortSet(k) {
+  sheetClose('picker');
+  if (k === rsort || !RSORT[k]) return;
+  rsort = k; lsSet('jotjor_sort', k);
+  recentPage.out = 0; recentPage.in = 0; ST.page = 0;
+  if (DATA) render();
+  if (view === 'stream') renderStream();
+}
+window.sortOpen = sortOpen; window.sortSet = sortSet;
+
 function recentBlock(d, mode) {
-  var list = d.recent.filter(function (x) { return mode === 'in' ? x.dir === 'in' : (x.dir === 'out' || x.stream === 'credit'); });   // หน้ารายจ่ายรวมเงินคืนบัตรที่หักยอด
+  var list = sortList(d.recent.filter(function (x) { return mode === 'in' ? x.dir === 'in' : (x.dir === 'out' || x.stream === 'credit'); }));   // หน้ารายจ่ายรวมเงินคืนบัตรที่หักยอด
   var pages = Math.max(1, Math.ceil(list.length / 5));
   recentPage[mode] = Math.min(recentPage[mode], pages - 1);
   return recentList(d, list, recentPage[mode], 5, 'recentGo');
@@ -871,7 +908,7 @@ function recentBlock(d, mode) {
 
 /** การ์ดรายการล่าสุด (ใช้ทั้งหน้าหลักและหน้าลงลึก) d = ข้อมูลหน้าหลัก ใช้รายชื่อแท็ก, goFn = ชื่อฟังก์ชันเปลี่ยนหน้า */
 function recentList(d, list, page, PER, goFn) {
-  var h = '<section class="card"><h2>' + t('recent.title') + '</h2>';
+  var h = '<section class="card"><div class="chead"><h2>' + t('recent.title') + '</h2><span class="ctl"><button class="rb' + (rsort === 'new' ? '' : ' on') + '" onclick="sortOpen()" aria-label="' + esc(t('sort.title') + ': ' + t(RSORT[rsort])) + '"><i class="ic ic-sort"></i></button></span></div>';
   var shown = 0, pages = Math.max(1, Math.ceil(list.length / PER));
   list.slice(page * PER, page * PER + PER).forEach(function (x) {
     var spend = x.dir === 'out';
@@ -891,7 +928,7 @@ function recentList(d, list, page, PER, goFn) {
     h += '</div>';
   });
   if (!shown) h += '<div class="sub" style="padding:12px 0">' + t('recent.empty') + '</div>';
-  if (pages > 1) h += '<div class="pg"><button' + (page <= 0 ? ' disabled' : '') + ' onclick="' + goFn + '(-1)">&#8249; ' + t('pg.prev') + '</button><span class="sub">' + t('pg.page', { p: page + 1, n: pages }) + '</span><button' + (page >= pages - 1 ? ' disabled' : '') + ' onclick="' + goFn + '(1)">' + t('pg.next') + ' &#8250;</button></div>';
+  if (pages > 1) h += '<div class="pg"><button' + (page <= 0 ? ' disabled' : '') + ' onclick="' + goFn + '(-1)">&#8249; ' + t(rsort === 'new' ? 'pg.prev' : 'pg.prevAny') + '</button><span class="sub">' + t('pg.page', { p: page + 1, n: pages }) + '</span><button' + (page >= pages - 1 ? ' disabled' : '') + ' onclick="' + goFn + '(1)">' + t(rsort === 'new' ? 'pg.next' : 'pg.nextAny') + ' &#8250;</button></div>';
   return h + '</section>';
 }
 
@@ -938,7 +975,7 @@ function renderStream() {
 
   var total = 0;
   groups.forEach(function (g) { if (g.total > 0) total += g.total; });
-  var h = '<section class="card"><div class="chead"><h2>' + t(credit ? 'drill.shareCredit' : 'drill.shareTransfer') + '</h2><span class="ctl"><button class="mb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
+  var h = '<section class="card"><div class="chead"><h2>' + t(credit ? 'drill.shareCredit' : 'drill.shareTransfer') + '</h2><span class="ctl"><button class="rb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
   if (!groups.length) h += '<div class="sub">' + t('cat.empty') + '</div>';
   groups.forEach(function (g) {
     var p = total > 0 ? Math.max(0, g.total) / total * 100 : 0;
@@ -951,7 +988,7 @@ function renderStream() {
   if (groups.length > 1) h += '<div class="sub" style="margin-top:8px">' + t('drill.pickHint') + '</div>';
   h += '</section>';
 
-  var list = sd.list.filter(function (x) { return (x.dir === 'out' || x.stream === 'credit') && (!ST.acct || x.acct === ST.acct); });
+  var list = sortList(sd.list.filter(function (x) { return (x.dir === 'out' || x.stream === 'credit') && (!ST.acct || x.acct === ST.acct); }));
   var PER = 10, pages = Math.max(1, Math.ceil(list.length / PER));
   ST.page = Math.min(ST.page, pages - 1);
   h += recentList(DATA, list, ST.page, PER, 'stGo');
@@ -1156,8 +1193,8 @@ function loadOv(fresh) {
 }
 function ovTab(tb) { if (OV.tab === tb) return; OV.tab = tb; OV.type = ''; OV.cat = ''; OV.sel = -1; renderOv(); }
 function ovMode(m) { OV.mode = m; OV.sel = -1; OV.selM = 5; renderOv(); }
-function ovType(v) { OV.type = v; renderOv(); }
-function ovCat(v) { OV.cat = v; renderOv(); }
+function ovType(v) { OV.type = v; renderOv(); if (!$('picker').hidden) ovFilterDraw(); }
+function ovCat(v) { OV.cat = v; renderOv(); if (!$('picker').hidden) ovFilterDraw(); }
 function ovCyc(n) { var o = OV.offset + n; if (o > 0) return; OV.offset = o; OV.data = null; OV.sel = -1; OV.selM = 5; renderOv(); loadOv(); }
 window.openOv = openOv; window.ovMode = ovMode; window.ovType = ovType; window.ovCat = ovCat;
 
@@ -1197,15 +1234,36 @@ function cmpPill(v, base) {
   return '<span class="pill' + (warn ? ' up' : ' dn') + '">' + (up ? '▲ ' : '▼ ') + t(up ? 'ov.more' : 'ov.less', { p: p }) + '</span>';
 }
 
-function ovTypeOpts() {
+/* ตัวกรองประเภท/หมวด อยู่ใน bottom sheet เดียว แตะแล้วมีผลทันที sheet ยังเปิดอยู่จนกดตกลง */
+var OVF = [];   // ตัวเลือกใน sheet ตัวกรอง [ชนิด, ค่า] อ้างด้วยลำดับ (ชื่อหมวดอาจมีอักขระพิเศษ)
+function ovFilterOpen() { PK = null; ovFilterDraw(); sheetOpen('picker'); }
+function ovPick(i) { var o = OVF[i]; if (!o) return; if (o[0] === 'type') ovType(o[1]); else ovCat(o[1]); }
+window.ovPick = ovPick;
+function ovFilterDraw() {
+  OVF = [];
+  function one(fn, v, label, cur) {
+    var on = v === cur;
+    OVF.push([fn === 'ovType' ? 'type' : 'cat', v]);
+    return '<button type="button" class="pko' + (on ? ' on' : '') + '" onclick="ovPick(' + (OVF.length - 1) + ')"><span>' + esc(label) + '</span>' + (on ? '<i class="ic ic-check"></i>' : '') + '</button>';
+  }
   var o = OV.tab === 'out' ? [['c', 'ov.tCredit'], ['t', 'ov.tTransfer'], ['k', 'ov.tCash']] : [['a', 'ov.tAccount'], ['k', 'ov.tCashIn'], ['c', 'ov.tCard']];
-  return o.reduce(function (h, x) { return h + opt(x[0], t(x[1]), OV.type); }, opt('', t('ov.allType'), OV.type));
+  var h = '<div class="pkg">' + t('ov.type') + '</div>' + one('ovType', '', t('ov.all'), OV.type);
+  o.forEach(function (x) { h += one('ovType', x[0], t(x[1]), OV.type); });
+  if (OV.tab === 'out' && OV.data) {
+    var names = OV.data.tags.slice();
+    OV.data.ex.forEach(function (r) { if (names.indexOf(r[3]) < 0) names.push(r[3]); });
+    h += '<div class="pkg">' + t('ov.cat') + '</div>' + one('ovCat', '', t('ov.all'), OV.cat);
+    names.forEach(function (n) { h += one('ovCat', n, n === UNTAG ? t('tag.untagged') : n, OV.cat); });
+  }
+  h += '<div class="btns pkbtns"><button type="button"' + (OV.type || OV.cat ? '' : ' disabled') + ' onclick="ovClear()">' + t('ov.clear') + '</button><button type="button" class="pri" onclick="ovFilterDone()">' + t('ov.done') + '</button></div>';
+  $('pkTitle').textContent = t('ov.filter');
+  var sc = $('pkList').scrollTop;
+  $('pkList').innerHTML = h;
+  $('pkList').scrollTop = sc;
 }
-function ovCatOpts() {
-  var names = OV.data.tags.slice();
-  OV.data.ex.forEach(function (r) { if (names.indexOf(r[3]) < 0) names.push(r[3]); });
-  return names.reduce(function (h, n) { return h + opt(n, n === UNTAG ? t('tag.untagged') : n, OV.cat); }, opt('', t('ov.allCat'), OV.cat));
-}
+function ovClear() { OV.type = ''; OV.cat = ''; renderOv(); ovFilterDraw(); }
+function ovFilterDone() { sheetClose('picker'); }
+window.ovFilterOpen = ovFilterOpen; window.ovClear = ovClear; window.ovFilterDone = ovFilterDone;
 
 function renderOv() {
   $('ovOut').className = OV.tab === 'out' ? 'on' : ''; $('ovIn').className = OV.tab === 'in' ? 'on' : '';
@@ -1219,10 +1277,10 @@ function renderOv() {
   var c = d.cycles[d.cycles.length - 1];
   $('ovcyc').textContent = range(c.start, c.end) + (OV.offset === 0 ? t('top.current') : '');
   $('ovupd').textContent = t('top.updated', { time: fT.format(new Date(d.now)) });
-  var h = '<section class="card ovctl"><div class="seg"><button type="button" class="' + (OV.mode === 'day' ? 'on' : '') + '" onclick="ovMode(\'day\')">' + t('ov.day') + '</button>'
+  var on = !!(OV.type || OV.cat);
+  var h = '<div class="ovbar"><div class="mseg"><button type="button" class="' + (OV.mode === 'day' ? 'on' : '') + '" onclick="ovMode(\'day\')">' + t('ov.day') + '</button>'
     + '<button type="button" class="' + (OV.mode === 'month' ? 'on' : '') + '" onclick="ovMode(\'month\')">' + t('ov.month') + '</button></div>'
-    + '<div class="ovf' + (OV.tab === 'out' ? '' : ' one') + '">' + fld(t('ov.type'), '<select data-title="' + esc(t('ov.type')) + '" onchange="ovType(this.value)">' + ovTypeOpts() + '</select>')
-    + (OV.tab === 'out' ? fld(t('ov.cat'), '<select data-title="' + esc(t('ov.cat')) + '" onchange="ovCat(this.value)">' + ovCatOpts() + '</select>') : '') + '</div></section>';
+    + '<button type="button" class="rb fbtn' + (on ? ' on' : '') + '" onclick="ovFilterOpen()" aria-label="' + esc(t('ov.filter')) + '"><i class="ic ic-funnel"></i></button></div>';
   h += '<section class="card">' + (OV.mode === 'day' ? ovDayHead() : ovMonthHead()) + '<div id="ovchart" class="ovchart"></div><div id="ovinfo" class="sub ovinfo"></div></section>';
   $('ovapp').innerHTML = icons(h);
   enhance($('ovapp'));
@@ -1351,8 +1409,34 @@ function spark(a) {
 function totalBar(d) {
   var step = (d.steps && d.steps.total) || d.step || 10000, v = d.total.total;
   var lvl = Math.max(0, Math.floor(v / step)), prev = lvl * step, pct = Math.max(0, Math.min(100, (v - prev) / step * 100));
-  return '<div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div><div class="cp"><span>' + money(prev) + '</span><span>' + money(prev + step) + '</span></div>';
+  return '<div class="foot"><div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div><div class="cp"><span>' + money(prev) + '</span><span>' + money(prev + step) + '</span></div></div>';
 }
+
+/* ----- แถบย่อติดบนสุด: เลื่อนพ้นการ์ดยอดรวม (รายจ่าย) / การ์ดรายรับ แล้วโผล่ แตะแล้วกลับบนสุด ----- */
+function miniHtml() {
+  var d = DATA;
+  if (!d) return '';
+  if (tab === 'out') {
+    var step = (d.steps && d.steps.total) || d.step || 10000, v = d.total.total, prev = Math.max(0, Math.floor(v / step)) * step;
+    var pct = Math.max(0, Math.min(100, (v - prev) / step * 100));
+    return '<div class="mrow"><span class="mlab">' + t('total.label') + '</span><b>' + money(v) + ' <small>' + t('unit.baht') + '</small></b></div>'
+      + '<div class="mbar"><i style="width:' + pct.toFixed(1) + '%"></i></div>';
+  }
+  return '<div class="mrow"><span class="mlab">' + t('income.label') + '</span><b>' + money(d.income.total) + ' <small>' + t('unit.baht') + '</small></b></div>';
+}
+var miniOn = false;
+function miniSync() {
+  var el = $('mini'), anchor = view === 'main' && !$('main').hidden ? document.querySelector(tab === 'out' ? '#app .toprow' : '#app .inhero') : null;
+  var show = !!anchor && anchor.getBoundingClientRect().bottom < 0;
+  if (show === miniOn) return;
+  miniOn = show;
+  if (show) { el.innerHTML = miniHtml(); el.classList.remove('out'); el.hidden = false; }
+  else if (RM) el.hidden = true;
+  else { el.classList.add('out'); setTimeout(function () { if (!miniOn) el.hidden = true; }, 180); }
+}
+var miniRaf = 0;
+window.addEventListener('scroll', function () { if (!miniRaf) miniRaf = requestAnimationFrame(function () { miniRaf = 0; miniSync(); }); }, { passive: true });
+$('mini').onclick = function () { window.scrollTo({ top: 0, behavior: RM ? 'auto' : 'smooth' }); };
 
 function render() {
   var d = DATA, c = d.credit, tr = d.transfer;
@@ -1381,6 +1465,8 @@ function render() {
   if (animMain && view === 'main') { animMain = false; animIn($('app')); }
   flashIn($('app'));
   renderMg(); renderAcc(); if (view === 'settings') { renderCy(); renderCp(); }
+  if (miniOn) $('mini').innerHTML = miniHtml();
+  miniSync();
 }
 
 /* ---------- เริ่มต้น ---------- */
@@ -1388,6 +1474,9 @@ function render() {
 function applyStrings() {
   document.title = t('app.title');
   Array.prototype.forEach.call(document.querySelectorAll('[data-t]'), function (el) { el.innerHTML = icons(esc(t(el.getAttribute('data-t')))); });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tw]'), function (el) {   // ข้อความยาว: ตัดบรรทัดเฉพาะที่ | ไม่ตัดกลางคำ
+    el.innerHTML = t(el.getAttribute('data-tw')).split('|').map(function (x) { return '<span class="nw">' + esc(x) + '</span>'; }).join('');
+  });
   Array.prototype.forEach.call(document.querySelectorAll('[data-ph]'), function (el) { el.placeholder = t(el.getAttribute('data-ph')); });
   Array.prototype.forEach.call(document.querySelectorAll('[data-aria]'), function (el) { el.setAttribute('aria-label', t(el.getAttribute('data-aria'))); });
 }
@@ -1395,6 +1484,7 @@ function applyStrings() {
 function busy() { if (FS || sbAny() || !$('picker').hidden || !$('sheet').hidden || !$('dsheet').hidden) return true; var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
 
 applyStrings();
+$('abver').textContent = APP_VER;
 whenSet('');
 $('prev').onclick = function () { offset--; animMain = true; load(); };
 $('next').onclick = function () { if (offset < 0) { offset++; animMain = true; load(); } };
