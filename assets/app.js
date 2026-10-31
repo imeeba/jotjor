@@ -123,7 +123,7 @@ function kbFix() {
 if (window.visualViewport) { window.visualViewport.addEventListener('resize', kbFix); window.visualViewport.addEventListener('scroll', kbFix); kbFix(); }
 document.addEventListener('focusin', function (ev) {
   var el = ev.target;
-  if (!el || el.tagName !== 'INPUT' || !el.closest('.sheetbox')) return;
+  if (!el || el.tagName !== 'INPUT') return;
   setTimeout(function () { kbFix(); el.scrollIntoView({ block: 'center', behavior: RM ? 'auto' : 'smooth' }); }, 320);
 });
 
@@ -260,28 +260,12 @@ $('setupForm').onsubmit = function (ev) {
 };
 
 var view = 'main';
-function fillSteps() {
-  var st = (DATA && DATA.steps) || {};
-  $('stTotal').value = st.total || ''; $('stCredit').value = st.credit || ''; $('stTransfer').value = st.transfer || '';
-}
-$('stSave').onclick = function () {
-  var a = $('stTotal').value, b = $('stCredit').value, c = $('stTransfer').value, btn = $('stSave');
-  sbSet(btn, 'busy');
-  api('setSetting', ['step_total', a]).then(function () { return api('setSetting', ['step_credit', b]); })
-    .then(function () { return api('setSetting', ['step_transfer', c]); }).then(function () {
-      sbSet(btn, 'done'); buzz(); load();
-      setTimeout(function () { sbSet(btn, ''); }, 1200);
-    }, function (e) {
-      sbSet(btn, '');
-      if (!guard(e)) toast(t('cash.fail', { e: errMsg(e) }));
-    });
-};
 /* เปลี่ยนหน้า: หน้าย่อยเลื่อนเข้าจากขวา กลับหน้าหลักเลื่อนออกทางขวา (View Transitions ถ้าเบราว์เซอร์รองรับ) */
 function showView(v) {
   var same = v === view;
   function swap() {
     view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings'; $('stream').hidden = v !== 'stream'; $('ov').hidden = v !== 'ov';
-    if (v === 'settings') { fillSteps(); renderCy(); renderAcc(); renderMg(); }
+    if (v === 'settings') { renderCy(); renderCp(); renderAcc(); renderMg(); }
     if (v === 'main' && !same && DATA) { animMain = true; render(); }
     if (v !== 'main') window.scrollTo(0, 0);
   }
@@ -700,7 +684,7 @@ window.mgMergeGo = mgMergeGo; window.mgAddSubGo = mgAddSubGo; window.mgDelGo = m
 var FS = '';   // '' | 'mg' | 'acc' | 'accadd'
 function renderFs() {
   if (!FS || !DATA) return;
-  var r = FS === 'mg' && mg ? mgSheet(DATA) : (FS === 'acc' && acc ? accSheet(DATA) : (FS === 'accadd' ? accAddSheet() : ['', '']));
+  var r = FS === 'mg' && mg ? mgSheet(DATA) : (FS === 'acc' && acc ? accSheet(DATA) : (FS === 'accadd' ? accAddSheet() : (FS === 'cy' ? cySheet() : (FS === 'cp' ? cpSheet() : ['', '']))));
   $('fsTitle').textContent = r[0];
   $('fsBody').innerHTML = icons(r[1]);
   enhance($('fsBody'));
@@ -716,7 +700,7 @@ function fsHide(cb) {
 }
 function fsCancel() {
   if (sbAny()) return;
-  if (FS === 'mg') mgCancel(); else if (FS === 'acc') accCancel(); else if (FS === 'accadd') accAddClose(); else fsHide();
+  if (FS === 'mg') mgCancel(); else if (FS === 'acc') accCancel(); else if (FS === 'accadd') accAddClose(); else fsHide(function () { accDraft = {}; });
 }
 window.fsCancel = fsCancel;
 $('fsClose').onclick = fsCancel; $('fsbg').onclick = fsCancel;
@@ -1079,26 +1063,52 @@ window.accSave = accSave; window.accDel = accDel; window.accAdd = accAdd;
 
 /* ---------- วันตัดรอบของทั้งแอป (ค่าเดียว) ---------- */
 
+/* วันตัดรอบและ checkpoint: การ์ดแสดงค่า แก้ใน bottom sheet (ช่องกรอกในหน้าโดนคีย์บอร์ดบัง) */
+function setRow(label, value) { return '<div class="kv"><span>' + label + '</span><b>' + value + '</b></div>'; }
+function editLong(fn) { return '<button type="button" class="addlong"' + (sbAny() ? ' disabled' : '') + ' onclick="' + fn + '()"><i class="ic ic-edit"></i>' + t('acc.edit') + '</button>'; }
 function renderCy() {
   var b = $('cybox');
   if (!b || !DATA) return;
-  var dis = sbAny() ? ' disabled' : '', cur = $('cyApp') && document.activeElement === $('cyApp') ? $('cyApp').value : (DATA.cycleDay || '');
-  b.innerHTML = '<h2>' + t('cy.title') + '</h2><div class="sub">' + t('cy.hint') + '</div>'
-    + '<div class="addrow"><input id="cyApp" inputmode="numeric" autocomplete="off" placeholder="' + esc(t('cy.ph')) + '" value="' + esc(cur) + '">'
-    + '<button class="' + sbCls('cy') + '"' + dis + ' onclick="cySave()">' + t('mg.save') + '</button></div>';
+  b.innerHTML = '<h2>' + t('cy.title') + '</h2><div class="sub">' + t('cy.hint') + '</div>' + setRow(t('cy.day'), t('cy.dayVal', { d: DATA.cycleDay || '' })) + editLong('cyOpen');
+  if (FS === 'cy') renderFs();
+}
+function renderCp() {
+  var b = $('cpbox');
+  if (!b || !DATA) return;
+  var st = DATA.steps || {};
+  b.innerHTML = '<h2>' + t('settings.cp') + '</h2><div class="sub">' + t('settings.cpHint') + '</div>'
+    + setRow(t('settings.cpTotal'), money(st.total)) + setRow(icons(t('card.credit')), money(st.credit)) + setRow(icons(t('card.transfer')), money(st.transfer)) + editLong('cpOpen');
+  if (FS === 'cp') renderFs();
+}
+function cySheet() {
+  return [t('cy.title'), fld(t('cy.day'), accInput('cyApp', t('cy.ph'), 'inputmode="numeric" maxlength="2"', DATA.cycleDay || '') + '<div class="sub hint">' + t('cy.hint') + '</div>') + btns('pri', 'cySave', t('mg.save'), 'cy')];
+}
+function cpSheet() {
+  var st = DATA.steps || {}, a = 'inputmode="numeric"';
+  return [t('settings.cp'), fld(t('settings.cpTotal'), accInput('stTotal', '', a, st.total || '')) + fld(icons(t('card.credit')), accInput('stCredit', '', a, st.credit || ''))
+    + fld(icons(t('card.transfer')), accInput('stTransfer', '', a, st.transfer || '')) + btns('pri', 'cpSave', t('mg.save'), 'cp')];
+}
+function cyOpen() { accDraft = {}; fsShow('cy'); }
+function cpOpen() { accDraft = {}; fsShow('cp'); }
+/** บันทึกค่าตั้งหลายตัวตามลำดับ: ปุ่มหมุน → ✓ → ปิด sheet แล้วโหลดใหม่; พลาด = toast sheet ค้างไว้ */
+function setRun(id, pairs) {
+  var rr = function () { renderCy(); renderCp(); };
+  SB[id] = 'busy'; rr();
+  pairs.reduce(function (p, kv) { return p.then(function () { return api('setSetting', kv); }); }, Promise.resolve()).then(function () {
+    SB[id] = 'done'; buzz(); rr();
+    setTimeout(function () { delete SB[id]; fsHide(function () { accDraft = {}; animMain = true; load(); }); }, 550);
+  }, function (e) {
+    delete SB[id];
+    if (!guard(e)) { toast(errMsg(e)); rr(); }
+  });
 }
 function cySave() {
   var v = val('cyApp');
   if (!dayOk(v)) { toast(t('acc.badDay')); return; }
-  SB.cy = 'busy'; renderCy();
-  api('setSetting', ['cycle_day', v]).then(function () {
-    SB.cy = 'done'; buzz(); renderCy(); animMain = true; load();
-    setTimeout(function () { delete SB.cy; renderCy(); }, 1200);
-  }, function (e) {
-    delete SB.cy;
-    if (!guard(e)) { toast(errMsg(e)); renderCy(); }
-  });
+  setRun('cy', [['cycle_day', v]]);
 }
+function cpSave() { setRun('cp', [['step_total', val('stTotal')], ['step_credit', val('stCredit')], ['step_transfer', val('stTransfer')]]); }
+window.cyOpen = cyOpen; window.cpOpen = cpOpen; window.cpSave = cpSave;
 window.cySave = cySave;
 
 /* ---------- หน้าภาพรวม: เน้นเห็นยอดใช้จ่ายเทียบรอบก่อน (ไม่ซ้ำการ์ดหน้าแรก)
@@ -1348,7 +1358,7 @@ function render() {
   enhance($('app'));
   if (animMain && view === 'main') { animMain = false; animIn($('app')); }
   flashIn($('app'));
-  renderMg(); renderAcc(); if (view === 'settings') renderCy();
+  renderMg(); renderAcc(); if (view === 'settings') { renderCy(); renderCp(); }
 }
 
 /* ---------- เริ่มต้น ---------- */

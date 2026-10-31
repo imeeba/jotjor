@@ -416,3 +416,12 @@ html[data-nav="back"]::view-transition-old(root){animation-name:vout-r}
 .ovs.in .s1{stroke:var(--t)}.ovs.in .d1,.ovs.in .b1{fill:var(--t)}
 .ovinfo{margin-top:10px;min-height:20px;font-variant-numeric:tabular-nums}
 @supports not (view-transition-name:none){#ov:not([hidden]){animation:vin-r .24s cubic-bezier(.2,.8,.2,1)}}
+
+/* หน้าตั้งค่า: การ์ดแสดงค่า (แก้ใน sheet) */
+.kv{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.kv span{color:var(--mute);font-size:14px}.kv span .ic{width:16px;height:16px}
+.kv b{font-weight:600;font-variant-numeric:tabular-nums}
+.setcard .addlong .ic{width:16px;height:16px}
+.fld .lab .ic{width:14px;height:14px}
+/* เผื่อที่ใต้หน้าเท่าความสูงคีย์บอร์ด ให้เลื่อนช่องล่างสุดขึ้นมาได้ */
+.wrap{padding-bottom:calc(48px + var(--kb,0px))}
