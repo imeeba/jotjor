@@ -1229,7 +1229,7 @@ function dashData_(offset) {
     suggest: suggest,
     total: { total: round2_(S.credit.total + S.transfer.total + S.cash.total), today: round2_(S.credit.today + S.transfer.today + S.cash.today) },
     subs: { cycle: finSubs_(subsCycle, mains), all: finSubs_(subsAll, mains) },
-    recent: list.slice(0, 40),
+    recent: list,   // ทั้งรอบ: หน้าเว็บเรียงตามยอดได้ทั้งรอบ
     untagged: list.filter(x => x.dir === 'out' && !x.tag).length,
     accounts: accounts_().filter(a => a.kind !== 'cash')
       .map(a => ({ row: a.row, name: a.name === accName_(a.kind, a.last4) ? '' : a.name, last4: a.last4, kind: a.kind })),
