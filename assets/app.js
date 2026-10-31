@@ -7,10 +7,10 @@ var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey', LS_CACHE = 'jotjor_cache';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
 var recentPage = { out: 0, in: 0 }, offset = 0, DATA = null, tab = 'out', catAmt = false, catSubs = false, unOpen = false;
-var mg = null, mgErr = '', mgBusy = false, mgNew = '', MGL = [];
+var mg = null, mgErr = '', mgNew = '', MGL = [];
 var cDir = 'out', cBusy = false;
 var ST = { stream: '', offset: 0, data: null, page: 0, acct: null };   // หน้าลงลึกของการ์ด
-var acc = null, accErr = '', accBusy = false, accKind = 'credit';      // ส่วนบัญชีและบัตรในหน้าตั้งค่า
+var acc = null, accKind = 'credit', accAdding = false, accDraft = {};   // ส่วนบัญชีและบัตรในหน้าตั้งค่า
 var pending = 0, wgen = 0;   // จำนวนการเขียนที่ยังค้าง / ตัวนับรุ่นของการแก้ ใช้ทิ้งผลโหลดที่เก่ากว่าหน้าจอ
 
 function $(id) { return document.getElementById(id); }
@@ -21,10 +21,11 @@ function te(key, vars) {
   if (vars) Object.keys(vars).forEach(function (k) { v[k] = esc(vars[k]); });
   return t(key, v);
 }
-function money(n, dec) {
-  n = Number(n) || 0; var neg = n < 0; n = Math.abs(n);
-  var d = (dec == null) ? ((Math.abs(n - Math.round(n)) > 0.004) ? 2 : 0) : dec;
-  return (neg ? '-' : '') + n.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+/** แสดงเป็นบาทเต็มเสมอ (ปัด .50 ขึ้น) ข้อมูลในชีตยังเก็บสตางค์ครบ */
+function money(n) {
+  n = Math.round(Number(n) || 0);
+  var neg = n < 0; n = Math.abs(n);
+  return (neg ? '-' : '') + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 var BK = 'Asia/Bangkok';
 var fDay = new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', timeZone: BK });
@@ -33,6 +34,136 @@ var fT = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', 
 
 function showErr(m) { var e = $('err'); e.hidden = !m; e.textContent = m || ''; }
 function errMsg(e) { return e && e.message ? e.message : String(e); }
+
+/* ---------- ความลื่นไหล: toast, ปุ่มบันทึก, แถวกะพริบ, แถบวิ่ง, ตัวเลขนับขึ้น, สั่น ---------- */
+
+var RM = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function buzz() { if (!RM && navigator.vibrate) { try { navigator.vibrate(12); } catch (e) { /* เครื่องไม่รองรับ */ } } }
+
+var toastT = 0;
+/** แถบแจ้งผิดพลาดล่างจอ หายเองใน 4 วินาที หรือแตะเพื่อปิด */
+function toast(m) {
+  var el = $('toast');
+  el.textContent = m; el.hidden = false; el.classList.remove('out');
+  clearTimeout(toastT);
+  toastT = setTimeout(toastHide, 4000);
+}
+function toastHide() { var el = $('toast'); el.classList.add('out'); setTimeout(function () { el.hidden = true; }, 200); }
+$('toast').onclick = toastHide;
+
+/* สถานะปุ่มบันทึก: busy = วงหมุน กดซ้ำไม่ได้, done = ✓  (SB ใช้กับปุ่มที่ถูกวาดใหม่ด้วย innerHTML) */
+var SB = {};
+function sbAny() { return Object.keys(SB).length > 0; }
+function sbCls(id) { return SB[id] ? ' sb-' + SB[id] : ''; }
+function sbSet(btn, st) { btn.classList.remove('sb-busy', 'sb-done'); if (st) btn.classList.add('sb-' + st); btn.disabled = st === 'busy'; }
+
+/* แผงที่ขยายออก: xpNext = ชื่อแผงที่เพิ่งเปิด (เล่นแอนิเมชันครั้งเดียว ไม่เล่นซ้ำตอนวาดใหม่) */
+var xpNext = '';
+function xpc(k) { return xpNext === k ? ' xp' : ''; }
+/** เล่นแอนิเมชันหุบของแผง .xpanel แล้วค่อยเปลี่ยนสถานะ */
+function collapseThen(cb) {
+  var els = document.querySelectorAll('.xpanel');
+  if (RM || !els.length) { cb(); return; }
+  Array.prototype.forEach.call(els, function (el) { el.classList.add('xpout'); });
+  setTimeout(cb, 170);
+}
+
+/* แถวที่เพิ่งเพิ่ม/แก้ กะพริบสีส้มอ่อนครั้งเดียว (data-k ของแถว) */
+var flashK = '';
+function flashIn(root) {
+  if (!flashK || !root) return;
+  var el = root.querySelector('[data-k="' + flashK.replace(/["\\]/g, '') + '"]');
+  if (el) { el.classList.add('flash'); flashK = ''; el.scrollIntoView({ block: 'nearest', behavior: RM ? 'auto' : 'smooth' }); }
+}
+
+/* แถบพลังวิ่งจาก 0 และตัวเลขยอดรวมนับขึ้น เฉพาะตอนเปิดหน้า/เปลี่ยนรอบ/เปลี่ยนแท็บ */
+var animMain = true, animSt = false;
+function countUp(el) {
+  var to = Number(el.getAttribute('data-n')) || 0, t0 = 0, D = 650;
+  function f(now) {
+    if (!t0) t0 = now;
+    var k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = money(to * e);
+    if (k < 1) requestAnimationFrame(f);
+  }
+  el.textContent = money(0);
+  requestAnimationFrame(f);
+}
+function animIn(root) {
+  if (RM || !root) return;
+  Array.prototype.forEach.call(root.querySelectorAll('.bar i'), function (i) {
+    var w = i.style.width;
+    i.style.transition = 'none'; i.style.width = '0';
+    void i.offsetWidth;
+    i.style.transition = '';
+    requestAnimationFrame(function () { i.style.width = w; });
+  });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-n]'), countUp);
+}
+
+/* ---------- bottom sheet (ใช้กับฟอร์มเงินสดและตัวเลือกแทน select ของมือถือ) ---------- */
+
+function sheetOpen(id) { var w = $(id); w.classList.remove('out'); w.hidden = false; }
+function sheetClose(id, cb) {
+  var w = $(id);
+  if (w.hidden) { if (cb) cb(); return; }
+  if (RM) { w.hidden = true; if (cb) cb(); return; }
+  w.classList.add('out');
+  setTimeout(function () { w.hidden = true; w.classList.remove('out'); if (cb) cb(); }, 190);
+}
+
+/** แทน <select> ทุกตัวใน root ด้วยปุ่มที่เปิด bottom sheet; select ตัวจริงซ่อนไว้ เก็บค่าและ onchange เดิม */
+function enhance(root) {
+  if (!root) return;
+  Array.prototype.forEach.call(root.querySelectorAll('select:not(.nsel)'), function (sel) {
+    sel.classList.add('nsel');
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'selbtn';
+    b.onclick = function () { pickOpen(sel); };
+    sel.parentNode.insertBefore(b, sel.nextSibling);
+    pickSync(sel);
+  });
+}
+function pickSync(sel) {
+  var b = sel.nextSibling, o = sel.options[sel.selectedIndex];
+  if (!b || b.className.indexOf('selbtn') < 0) return;
+  b.disabled = sel.disabled;
+  b.className = 'selbtn' + (sel.classList.contains('un') ? ' un' : '') + (!o || o.hasAttribute('data-ph') ? ' ph' : '');
+  b.innerHTML = '<span>' + esc(o ? o.text : '') + '</span><i class="ic ic-caret"></i>';
+}
+var PK = null;
+function pickOpen(sel) {
+  if (sel.disabled) return;
+  PK = sel;
+  var h = '';
+  function one(o, ind) {
+    if (o.hasAttribute('data-ph')) return '';
+    var on = o.index === sel.selectedIndex;
+    return '<button type="button" class="pko' + (ind ? ' ind' : '') + (on ? ' on' : '') + '" onclick="pickGo(' + o.index + ')"><span>' + esc(o.text) + '</span>' + (on ? '<i class="ic ic-check"></i>' : '') + '</button>';
+  }
+  Array.prototype.forEach.call(sel.children, function (c) {
+    if (c.tagName === 'OPTGROUP') {
+      h += '<div class="pkg">' + esc(c.label) + '</div>';
+      Array.prototype.forEach.call(c.children, function (o) { h += one(o, true); });
+    } else h += one(c, false);
+  });
+  $('pkTitle').textContent = sel.getAttribute('data-title') || t('pick.title');
+  $('pkList').innerHTML = h;
+  sheetOpen('picker');
+  var on = $('pkList').querySelector('.on');
+  $('pkList').scrollTop = 0;
+  if (on) on.scrollIntoView({ block: 'center' });
+}
+function pickGo(i) {
+  var sel = PK; PK = null;
+  sheetClose('picker');
+  if (!sel || sel.selectedIndex === i) return;
+  sel.selectedIndex = i;
+  pickSync(sel);
+  sel.dispatchEvent(new Event('change'));
+}
+window.pickGo = pickGo;
+$('pkbg').onclick = function () { PK = null; sheetClose('picker'); };
 
 /* ---------- เก็บค่าในเครื่อง ---------- */
 
@@ -116,23 +247,32 @@ $('setupForm').onsubmit = function (ev) {
 var view = 'main';
 function fillSteps() {
   var st = (DATA && DATA.steps) || {};
-  $('stCredit').value = st.credit || ''; $('stTransfer').value = st.transfer || '';
-  $('stMsg').textContent = '';
+  $('stTotal').value = st.total || ''; $('stCredit').value = st.credit || ''; $('stTransfer').value = st.transfer || '';
 }
 $('stSave').onclick = function () {
-  var a = $('stCredit').value, b = $('stTransfer').value;
-  $('stSave').disabled = true; $('stMsg').textContent = t('cash.saving');
-  api('setSetting', ['step_credit', a]).then(function () { return api('setSetting', ['step_transfer', b]); }).then(function () {
-    $('stSave').disabled = false; $('stMsg').textContent = t('cash.saved'); load();
-  }, function (e) {
-    $('stSave').disabled = false;
-    if (!guard(e)) $('stMsg').textContent = t('cash.fail', { e: errMsg(e) });
-  });
+  var a = $('stTotal').value, b = $('stCredit').value, c = $('stTransfer').value, btn = $('stSave');
+  sbSet(btn, 'busy');
+  api('setSetting', ['step_total', a]).then(function () { return api('setSetting', ['step_credit', b]); })
+    .then(function () { return api('setSetting', ['step_transfer', c]); }).then(function () {
+      sbSet(btn, 'done'); buzz(); load();
+      setTimeout(function () { sbSet(btn, ''); }, 1200);
+    }, function (e) {
+      sbSet(btn, '');
+      if (!guard(e)) toast(t('cash.fail', { e: errMsg(e) }));
+    });
 };
+/* เปลี่ยนหน้า: หน้าย่อยเลื่อนเข้าจากขวา กลับหน้าหลักเลื่อนออกทางขวา (View Transitions ถ้าเบราว์เซอร์รองรับ) */
 function showView(v) {
-  view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings'; $('stream').hidden = v !== 'stream';
-  if (v === 'settings') { fillSteps(); renderAcc(); renderMg(); }
-  if (v !== 'main') window.scrollTo(0, 0);
+  var same = v === view;
+  function swap() {
+    view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings'; $('stream').hidden = v !== 'stream';
+    if (v === 'settings') { fillSteps(); renderCy(); renderAcc(); renderMg(); }
+    if (v === 'main' && !same && DATA) { animMain = true; render(); }
+    if (v !== 'main') window.scrollTo(0, 0);
+  }
+  if (same || RM || !document.startViewTransition) { swap(); return; }
+  document.documentElement.setAttribute('data-nav', v === 'main' ? 'back' : 'fwd');
+  document.startViewTransition(swap);
 }
 /* หน้าย่อย (ตั้งค่า / ลงลึก) ใส่ใน history ให้ปุ่มย้อนกลับของมือถือกลับหน้าหลัก ไม่ใช่ปิดแอป */
 function openSub(v) { if (view === 'main') history.pushState({ v: v }, ''); else history.replaceState({ v: v }, ''); showView(v); }
@@ -186,12 +326,12 @@ function optimistic(patch, send, failMsg, onFail) {
   showErr(''); saveCache(); render();
   if (view === 'stream') renderStream();
   return send().then(function () {
-    pending--; wgen++; load(); if (view === 'stream') loadStream();
+    pending--; wgen++; buzz(); load(); if (view === 'stream') loadStream();
   }, function (e) {
     pending--; wgen++;
     if (guard(e)) return;
     DATA = JSON.parse(snap); saveCache(); render();
-    if (onFail) onFail(e); else showErr(t(failMsg, { e: errMsg(e) }));
+    if (onFail) onFail(e); else toast(t(failMsg, { e: errMsg(e) }));
     load(); if (view === 'stream') loadStream();
   });
 }
@@ -249,6 +389,7 @@ function patchStreamTag(row, nt) {
 
 function setTag(row, sel) {
   var nt = sel.value;
+  flashK = 'r' + row;
   optimistic(function (d) { patchTag(d, row, nt); patchStreamTag(row, nt); }, function () { return api('setTag', [row, nt]); }, 'tag.saveFail');
 }
 window.setTag = setTag;
@@ -256,8 +397,8 @@ window.setTag = setTag;
 function recentGo(n) { recentPage[tab] = Math.max(0, recentPage[tab] + n); render(); }
 window.recentGo = recentGo;
 function toggleCat() { catAmt = !catAmt; render(); if (view === 'stream') renderStream(); }
-function toggleSubs() { catSubs = !catSubs; render(); }
-function toggleUnOpen() { unOpen = !unOpen; render(); }
+function toggleSubs() { catSubs = !catSubs; if (catSubs) xpNext = 'cat'; render(); }
+function toggleUnOpen() { unOpen = !unOpen; if (unOpen) xpNext = 'un'; render(); }
 window.toggleCat = toggleCat; window.toggleSubs = toggleSubs; window.toggleUnOpen = toggleUnOpen;
 
 
@@ -281,24 +422,35 @@ function patchCash(d, p) {
 
 function cashGo() {
   if (cBusy) return;
-  var p = { dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: $('cwhen').value };
+  var p = { dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: $('cwhen').value }, btn = $('cgo');
   if (!(Number(String(p.amount).replace(/,/g, '')) > 0) || !DATA) {   // ยอดไม่ถูกต้อง: ให้ฝั่งชีตตอบข้อความผิดพลาดตามเดิม
-    cBusy = true; $('cgo').disabled = true; cashMsg(t('cash.saving'));
+    cBusy = true; sbSet(btn, 'busy'); cashMsg('');
     api('addCash', [p]).then(function () {
-      cBusy = false; $('cgo').disabled = false;
-      $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = '';
-      cashMsg(t('cash.saved')); closeCash(); load();
+      cBusy = false; sbSet(btn, 'done'); buzz();
+      setTimeout(function () {
+        sbSet(btn, '');
+        $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = '';
+        closeCash(); load();
+      }, 500);
     }, function (e) {
-      cBusy = false; $('cgo').disabled = false;
-      if (!guard(e)) cashMsg(t('cash.fail', { e: errMsg(e) }));
+      cBusy = false; sbSet(btn, '');
+      if (!guard(e)) toast(t('cash.fail', { e: errMsg(e) }));
     });
     return;
   }
-  $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = ''; cashMsg(''); closeCash();
-  optimistic(function (d) { patchCash(d, p); }, function () { return api('addCash', [p]); }, 'cash.fail', function (e) {
-    $('camt').value = p.amount; $('cmer').value = p.merchant; $('cwhen').value = p.when;   // คืนค่าที่กรอกไว้ให้แก้แล้วกดใหม่
-    openCash(); cashMsg(t('cash.fail', { e: errMsg(e) }));
-  });
+  /* ยอดถูกต้อง: ✓ ทันที ปิดฟอร์ม แล้วรายการใหม่กะพริบ ส่งไปชีตเบื้องหลัง */
+  cBusy = true; sbSet(btn, 'done');
+  setTimeout(function () {
+    cBusy = false; sbSet(btn, '');
+    $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = ''; cashMsg('');
+    closeCash(function () {
+      flashK = 'new';
+      optimistic(function (d) { patchCash(d, p); }, function () { return api('addCash', [p]); }, 'cash.fail', function (e) {
+        $('camt').value = p.amount; $('cmer').value = p.merchant; $('cwhen').value = p.when;   // คืนค่าที่กรอกไว้ให้แก้แล้วกดใหม่
+        openCash(); toast(t('cash.fail', { e: errMsg(e) }));
+      });
+    });
+  }, 450);
 }
 
 /* ---------- เงินคืน ---------- */
@@ -350,8 +502,8 @@ function inSetOf(it, tg) {
 }
 
 function mgRow(d, i) {
-  var it = MGL[i], dis = mgBusy ? ' disabled' : '';
-  var h = '<div class="mgrow' + (it.isMain ? '' : ' s') + '"><span class="mgn">' + (it.isMain ? '' : '&#8627; ') + esc(it.isMain ? it.main : it.sub) + '</span>';
+  var it = MGL[i], dis = sbAny() ? ' disabled' : '';
+  var h = '<div class="mgrow' + (it.isMain ? '' : ' s') + '" data-k="t:' + esc(it.full) + '"><span class="mgn">' + (it.isMain ? '' : '&#8627; ') + esc(it.isMain ? it.main : it.sub) + '</span>';
   h += '<span class="sub">' + useOf(d.usage, it) + '</span>';
   if (it.isMain) h += '<button class="mb mba"' + dis + ' onclick="mgAddSubOpen(' + i + ')"><i class="ic ic-add"></i>' + t('mg.addSub') + '</button>';
   h += '<button class="mb ib"' + dis + ' onclick="mgRenameOpen(' + i + ')" aria-label="' + esc(t('mg.rename')) + '"><i class="ic ic-edit"></i></button>';
@@ -361,26 +513,26 @@ function mgRow(d, i) {
 
 function mgPanel(d, i) {
   if (!mg || mg.i !== i) return '';
-  var it = MGL[i], dis = mgBusy ? ' disabled' : '';
+  var it = MGL[i], dis = sbAny() ? ' disabled' : '';
   var cur = it.isMain ? it.main : it.sub;
-  var h = '<div class="mgp">';
+  var h = '<div class="mgp xpanel' + xpc('mg') + '">', sb = sbCls('mg');
   if (mg.mode === 'rename') {
     h += '<div class="lab">' + te('mg.renameTo', { name: it.full }) + '</div>';
     h += '<input id="mgin" maxlength="20" value="' + esc(mg.draft != null ? mg.draft : cur) + '">';
-    h += '<div class="btns"><button class="pri"' + dis + ' onclick="mgRenameGo()">' + t('mg.save') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
+    h += '<div class="btns"><button class="pri' + sb + '"' + dis + ' onclick="mgRenameGo()">' + t('mg.save') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
   } else if (mg.mode === 'merge') {
     h += '<div class="txt">' + te('mg.mergeMsg', { draft: mg.draft, name: it.full, target: mg.target, count: mg.count }) + '</div>';
-    h += '<div class="btns"><button class="dng"' + dis + ' onclick="mgMergeGo()">' + t('mg.mergeGo') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
+    h += '<div class="btns"><button class="dng' + sb + '"' + dis + ' onclick="mgMergeGo()">' + t('mg.mergeGo') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
   } else if (mg.mode === 'addsub') {
     h += '<div class="lab">' + te('mg.addSubTo', { main: it.main }) + '</div>';
     h += '<input id="mgin" maxlength="20" placeholder="' + esc(t('mg.subName')) + '" value="' + esc(mg.draft || '') + '">';
-    h += '<div class="btns"><button class="pri"' + dis + ' onclick="mgAddSubGo()">' + t('mg.add') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
+    h += '<div class="btns"><button class="pri' + sb + '"' + dis + ' onclick="mgAddSubGo()">' + t('mg.add') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
   } else if (mg.mode === 'delete') {
     var nTx = useOf(d.usage, it), nRu = useOf(d.ruleUsage, it);
     h += '<div class="txt">' + te('mg.delAsk', { name: it.full }) + (it.isMain ? t('mg.delSubs') : '') + '</div>';
     if (nTx + nRu > 0) {
       h += '<div class="sub" style="margin-top:4px">' + t('mg.delUse', { tx: nTx, rules: nRu ? t('mg.delRules', { n: nRu }) : '' }) + '</div>';
-      h += '<div class="lab" style="margin-top:8px">' + t('mg.moveTo') + '</div><select id="mgmv">' + opt('', t('mg.moveNone'), '');
+      h += '<div class="lab" style="margin-top:8px">' + t('mg.moveTo') + '</div><select id="mgmv" data-title="' + esc(t('mg.moveTo')) + '">' + opt('', t('mg.moveNone'), '');
       d.tags.forEach(function (m) {
         if (!inSetOf(it, m)) h += opt(m, m, '');
         (d.tagOptions[m] || []).forEach(function (s) {
@@ -390,7 +542,7 @@ function mgPanel(d, i) {
       });
       h += opt('ข้าม', t('tag.skip'), '') + '</select>';
     }
-    h += '<div class="btns"><button class="dng"' + dis + ' onclick="mgDelGo()">' + t('mg.delGo') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
+    h += '<div class="btns"><button class="dng' + sb + '"' + dis + ' onclick="mgDelGo()">' + t('mg.delGo') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
   }
   if (mgErr) h += '<div class="err">' + esc(mgErr) + '</div>';
   return h + '</div>';
@@ -398,7 +550,7 @@ function mgPanel(d, i) {
 
 function mgInner(d) {
   MGL = [];
-  var dis = mgBusy ? ' disabled' : '';
+  var dis = sbAny() ? ' disabled' : '';
   var h = '<h2>' + t('mg.title') + '</h2><div class="sub">' + t('mg.hint') + '</div>';
   d.tags.forEach(function (m) {
     var im = MGL.length;
@@ -410,48 +562,61 @@ function mgInner(d) {
       h += mgRow(d, is) + mgPanel(d, is);
     });
   });
-  h += '<div class="addrow"><input id="mgnew" maxlength="20" placeholder="' + esc(t('mg.newMain')) + '" value="' + esc(mgNew) + '"><button' + dis + ' onclick="mgAddMain()">' + t('mg.add') + '</button></div>';
+  h += '<div class="addrow"><input id="mgnew" maxlength="20" placeholder="' + esc(t('mg.newMain')) + '" value="' + esc(mgNew) + '"><button class="' + sbCls('mgnew') + '"' + dis + ' onclick="mgAddMain()">' + t('mg.add') + '</button></div>';
   if (!mg && mgErr) h += '<div class="err">' + esc(mgErr) + '</div>';
   return h;
 }
 
-function renderMg() { var b = $('mgbox'); if (b && DATA) b.innerHTML = icons(mgInner(DATA)); }
+function renderMg() {
+  var b = $('mgbox');
+  if (!b || !DATA) return;
+  b.innerHTML = icons(mgInner(DATA));
+  if (xpNext === 'mg') xpNext = '';
+  enhance(b); flashIn(b);
+}
 
 function mgOpen(i, mode) {
-  mg = { i: i, mode: mode, draft: null, target: '', count: 0 }; mgErr = '';
+  mg = { i: i, mode: mode, draft: null, target: '', count: 0 }; mgErr = ''; xpNext = 'mg';
   renderMg();
   var el = $('mgin'); if (el) el.focus();
 }
 function mgRenameOpen(i) { mgOpen(i, 'rename'); }
 function mgAddSubOpen(i) { mgOpen(i, 'addsub'); }
 function mgDelOpen(i) { mgOpen(i, 'delete'); }
-function mgCancel() { mg = null; mgErr = ''; renderMg(); }
-function mgDone() { mg = null; mgErr = ''; mgNew = ''; load(); }
+function mgCancel() { collapseThen(function () { mg = null; mgErr = ''; renderMg(); }); }
+function mgDone(k) { mg = null; mgErr = ''; mgNew = ''; if (k) flashK = 't:' + k; renderMg(); load(); }
 
-function mgRun(name, args, done) {
-  mgBusy = true; mgErr = ''; renderMg();
-  api(name, args).then(function (res) { mgBusy = false; done(res); }, function (e) {
-    mgBusy = false;
-    if (!guard(e)) { mgErr = errMsg(e); renderMg(); }
+/** เรียก API ของส่วนแท็ก: ปุ่มหมุน → ✓ → แผงหุบ; พลาด = toast และแผงค้างไว้ */
+function mgRun(name, args, done, id) {
+  id = id || 'mg';
+  SB[id] = 'busy'; mgErr = ''; renderMg();
+  api(name, args).then(function (res) {
+    if (res && res.needConfirm) { delete SB[id]; done(res); return; }
+    SB[id] = 'done'; buzz(); renderMg();
+    setTimeout(function () { collapseThen(function () { delete SB[id]; done(res); }); }, 550);
+  }, function (e) {
+    delete SB[id];
+    if (!guard(e)) { toast(errMsg(e)); renderMg(); }
   });
 }
 
+function renamed(it, draft) { draft = String(draft || '').trim(); return it.isMain ? draft : it.main + '/' + draft; }
 function mgIn() { var el = $('mgin'); return el ? el.value : ''; }
 
 function mgRenameGo() {
-  var it = MGL[mg.i]; mg.draft = mgIn();
-  mgRun('renameTag', [it.full, mg.draft, false], function (r) {
-    if (r && r.needConfirm) { mg.mode = 'merge'; mg.count = r.count; mg.target = r.target; renderMg(); return; }
-    mgDone();
+  var it = MGL[mg.i], dr = mg.draft = mgIn();
+  mgRun('renameTag', [it.full, dr, false], function (r) {
+    if (r && r.needConfirm) { if (mg) { mg.mode = 'merge'; mg.count = r.count; mg.target = r.target; } renderMg(); return; }
+    mgDone(renamed(it, dr));
   });
 }
 function mgMergeGo() {
-  var it = MGL[mg.i];
-  mgRun('renameTag', [it.full, mg.draft, true], function () { mgDone(); });
+  var it = MGL[mg.i], dr = mg.draft;
+  mgRun('renameTag', [it.full, dr, true], function () { mgDone(renamed(it, dr)); });
 }
 function mgAddSubGo() {
-  var it = MGL[mg.i]; mg.draft = mgIn();
-  mgRun('addSubTag', [it.main, mg.draft], function () { mgDone(); });
+  var it = MGL[mg.i], dr = mg.draft = mgIn();
+  mgRun('addSubTag', [it.main, dr], function () { mgDone(it.main + '/' + String(dr).trim()); });
 }
 function mgDelGo() {
   var it = MGL[mg.i], sel = $('mgmv');
@@ -459,7 +624,7 @@ function mgDelGo() {
 }
 function mgAddMain() {
   var el = $('mgnew'); mgNew = el ? el.value : '';
-  mgRun('addMainTag', [mgNew], function () { mgDone(); });
+  mgRun('addMainTag', [mgNew], function () { mgDone(mgNew.trim()); }, 'mgnew');
 }
 window.mgRenameOpen = mgRenameOpen; window.mgAddSubOpen = mgAddSubOpen; window.mgDelOpen = mgDelOpen;
 window.mgCancel = mgCancel; window.mgRenameGo = mgRenameGo; window.mgMergeGo = mgMergeGo;
@@ -499,7 +664,7 @@ function catBlock(d) {
       if (m.subs[''] > 0.004) subs.push('');
       subs.forEach(function (x) {
         var v = m.subs[x], sp = total > 0 ? v / total * 100 : 0;
-        h += '<div class="crow s"><span class="cn">' + esc(x || t('subs.none')) + '</span><span class="bar c"><i style="width:' + Math.max(0, Math.min(100, sp)).toFixed(1) + '%"></i></span><span class="cv">' + (catAmt ? money(v) : sp.toFixed(0) + '%') + '</span></div>';
+        h += '<div class="crow s' + xpc('cat') + '"><span class="cn">' + esc(x || t('subs.none')) + '</span><span class="bar c"><i style="width:' + Math.max(0, Math.min(100, sp)).toFixed(1) + '%"></i></span><span class="cv">' + (catAmt ? money(v) : sp.toFixed(0) + '%') + '</span></div>';
       });
     }
     h += '</div>';
@@ -513,8 +678,8 @@ function unBar(d) {
   var h = '<section class="card unbar"><div class="unh" onclick="toggleUnOpen()">' + te('un.bar', { n: d.untagged }) + '<i class="car' + (unOpen ? ' o' : '') + '">&#9662;</i></div>';
   if (unOpen) list.forEach(function (x) {
     var nm = x.merchant || t(x.stream === 'credit' ? 'recent.creditName' : (x.stream === 'cash' ? 'recent.cashName' : 'recent.outName'));
-    h += '<div class="item"><div class="nm">' + esc(nm) + '</div><div class="am">' + money(x.amount, 2) + '</div><div class="sub">' + fDT.format(new Date(x.at)) + '</div><div></div>'
-      + '<select class="un"' + (x.row ? '' : ' disabled') + ' onchange="setTag(' + Number(x.row) + ',this)"><option value="">' + t('tag.pick') + '</option>' + tagOpts(d, '') + '</select></div>';
+    h += '<div class="item' + xpc('un') + '" data-k="r' + Number(x.row) + '"><div class="nm">' + esc(nm) + '</div><div class="am">' + money(x.amount) + '</div><div class="sub">' + fDT.format(new Date(x.at)) + '</div><div></div>'
+      + '<select data-title="' + esc(t('tag.pickTitle')) + '" class="un"' + (x.row ? '' : ' disabled') + ' onchange="setTag(' + Number(x.row) + ',this)"><option value="" data-ph>' + t('tag.pick') + '</option>' + tagOpts(d, '') + '</select></div>';
   });
   return h + '</section>';
 }
@@ -524,7 +689,7 @@ function streamCard(cls, label, s, stream) {
   return '<div class="mini ' + cls + ' tap" role="button" tabindex="0" onclick="openStream(\'' + stream + '\')" aria-label="' + esc(t('drill.open')) + '">'
     + '<i class="ic ic-next go"></i><div class="lab">' + label + '</div><div class="num">' + money(s.total) + '</div>'
     + '<div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
-    + '<div class="cp"><span>' + money(s.prev, 0) + '</span><span>' + money(s.next, 0) + '</span></div></div>';
+    + '<div class="cp"><span>' + money(s.prev) + '</span><span>' + money(s.next) + '</span></div></div>';
 }
 
 function cashTile(d) {
@@ -533,15 +698,15 @@ function cashTile(d) {
     + '<div class="bar c" style="margin-top:10px"><i style="width:' + p.toFixed(1) + '%"></i></div>'
     + '<div class="sub" style="margin-top:6px">' + p.toFixed(0) + '%</div></button>';
 }
-function openCash() { $('sheet').hidden = false; cashMsg(''); }
-function closeCash() { $('sheet').hidden = true; }
+function openCash() { sheetOpen('sheet'); cashMsg(''); }
+function closeCash(cb) { sheetClose('sheet', cb); }
 window.openCash = openCash;
 
 function suggestBlock(d) {
   if (!d.suggest || !d.suggest.length) return '';
   var h = '<section class="card"><h2>' + t('suggest.title') + '</h2>';
   d.suggest.forEach(function (s) {
-    h += '<div class="sg"><div class="gh"><span>' + t('suggest.in', { amount: money(s.amount, 2) }) + '</span><span class="sub">🏦 x' + esc(s.ref) + '</span></div>';
+    h += '<div class="sg"><div class="gh"><span>' + t('suggest.in', { amount: money(s.amount) }) + '</span><span class="sub">🏦 x' + esc(s.ref) + '</span></div>';
     h += '<div class="sub">' + t('suggest.at', { time: fDT.format(new Date(s.inAt)) }) + '</div>';
     h += '<div class="sub">' + te('suggest.match', { time: fDT.format(new Date(s.outAt)), merchant: s.outMerchant ? ' · ' + s.outMerchant : '', tag: s.outTag || t('tag.untagged') }) + '</div>';
     h += '<div class="btns"><button class="pri" onclick="refundGo(' + Number(s.inRow) + ',' + Number(s.outRow) + ',true)">' + t('suggest.yes') + '</button>';
@@ -579,11 +744,11 @@ function recentList(d, list, page, PER, goFn) {
     var nm = x.merchant || (x.stream === 'credit' ? t(refund ? 'recent.creditRefund' : 'recent.creditName')
       : (x.stream === 'cash' ? t('recent.cashName') : (spend ? t('recent.outName') : t(x.linked ? 'recent.refundIn' : 'recent.in'))));
     var who = x.stream === 'cash' ? t('recent.whoCash') : te(x.stream === 'credit' ? 'recent.whoCard' : 'recent.whoAcct', { ref: x.ref });
-    h += '<div class="item"><div class="nm">' + esc(nm) + '</div><div class="am' + (spend ? '' : ' in') + '">' + (spend ? '' : '+') + money(x.amount, 2) + '</div>';
+    h += '<div class="item" data-k="' + (x.row ? 'r' + Number(x.row) : 'new') + '"><div class="nm">' + esc(nm) + '</div><div class="am' + (spend ? '' : ' in') + '">' + (spend ? '' : '+') + money(x.amount) + '</div>';
     h += '<div class="sub">' + fDT.format(new Date(x.at)) + ' &middot; ' + who + (!spend && x.tag ? ' &middot; ' + esc(x.tag) : '')
       + (refund ? ' &middot; ' + t('recent.cardRefundNote') : '') + (x.linked ? ' &middot; ' + t('recent.linkedNote') : '') + '</div><div></div>';
     if ((spend || refund) && d) {
-      h += '<select class="' + (x.tag ? '' : 'un') + '"' + (x.row ? '' : ' disabled') + ' onchange="setTag(' + Number(x.row) + ',this)"><option value="">' + t('tag.pick') + '</option>';
+      h += '<select data-title="' + esc(t('tag.pickTitle')) + '" class="' + (x.tag ? '' : 'un') + '"' + (x.row ? '' : ' disabled') + ' onchange="setTag(' + Number(x.row) + ',this)"><option value="" data-ph>' + t('tag.pick') + '</option>';
       h += tagOpts(d, x.tag);
       h += '</select>';
     }
@@ -597,7 +762,7 @@ function recentList(d, list, page, PER, goFn) {
 /* ---------- หน้าลงลึกของการ์ด: สัดส่วนแต่ละบัตร/บัญชี + รายการล่าสุดเฉพาะประเภทนั้น ---------- */
 
 function openStream(s) {
-  ST = { stream: s, offset: offset, data: null, page: 0, acct: null };
+  ST = { stream: s, offset: offset, data: null, page: 0, acct: null }; animSt = true;
   openSub('stream'); renderStream(); loadStream();
 }
 function loadStream(fresh) {
@@ -616,7 +781,7 @@ window.openStream = openStream; window.stGo = stGo; window.stPick = stPick;
 function range(a, b) { return fDay.format(new Date(a)) + ' – ' + fDay.format(new Date(b - 86400000)); }
 
 function acctName(g, credit) {
-  if (g.name) return g.name;
+  if (g.name) return g.name + (g.last4 ? ' x-' + g.last4 : '');
   return g.last4 ? t(credit ? 'drill.cardRef' : 'drill.acctRef', { ref: g.last4 }) : t('drill.noRef');
 }
 
@@ -631,9 +796,7 @@ function renderStream() {
   }
   var groups = sd.accts.slice().sort(function (a, b) { return b.total - a.total; });
   var sel = groups.filter(function (g) { return g.key === ST.acct; })[0];
-  var same = groups.every(function (g) { return g.start === sd.cycle.start && g.end === sd.cycle.end; });
-  var cur = ST.offset === 0 ? t('top.current') : '';
-  $('stcyc').textContent = sel ? range(sel.start, sel.end) + cur : (same || !credit ? range(sd.cycle.start, sd.cycle.end) + cur : t('drill.ownCycle'));
+  $('stcyc').textContent = range(sd.cycle.start, sd.cycle.end) + (ST.offset === 0 ? t('top.current') : '');
   $('stupd').textContent = t('top.updated', { time: fT.format(new Date(sd.now)) });
 
   var total = 0;
@@ -646,7 +809,7 @@ function renderStream() {
       + '<span class="cn">' + esc(acctName(g, credit)) + '</span>'
       + '<span class="bar ' + (credit ? 'c' : 't') + '"><i style="width:' + Math.min(100, p).toFixed(1) + '%"></i></span>'
       + '<span class="cv">' + (catAmt ? money(g.total) : p.toFixed(0) + '%') + '</span></div>'
-      + '<div class="sub dsub">' + t('drill.count', { n: g.count }) + (credit && !same ? ' &middot; ' + range(g.start, g.end) : '') + '</div></div>';
+      + '<div class="sub dsub">' + t('drill.count', { n: g.count }) + '</div></div>';
   });
   if (groups.length > 1) h += '<div class="sub" style="margin-top:8px">' + t('drill.pickHint') + '</div>';
   h += '</section>';
@@ -656,82 +819,138 @@ function renderStream() {
   ST.page = Math.min(ST.page, pages - 1);
   h += recentList(DATA, list, ST.page, PER, 'stGo');
   $('stapp').innerHTML = icons(h);
+  enhance($('stapp'));
+  if (animSt) { animSt = false; animIn($('stapp')); }
+  flashIn($('stapp'));
 }
 
-/* ---------- บัญชีและบัตร (หน้าตั้งค่า) ---------- */
+/* ---------- บัญชีและบัตร (หน้าตั้งค่า) ----------
+ * ทุกบัญชี/บัตรที่เพิ่มเป็นของตัวเอง ไม่มีวันตัดรอบรายบัตร (ใช้วันตัดรอบของทั้งแอปในการ์ดวันตัดรอบ) */
+
+function kindLabel(k) { return t(k === 'credit' ? 'acc.credit' : 'acc.bank'); }
+function dv(id, def) { return accDraft[id] != null ? accDraft[id] : (def == null ? '' : def); }
+function accDraftSet(el) { accDraft[el.id] = el.value; }
+window.accDraftSet = accDraftSet;
+function accInput(id, ph, attrs, def) {
+  return '<input id="' + id + '" ' + (attrs || '') + ' autocomplete="off" placeholder="' + esc(ph) + '" value="' + esc(dv(id, def)) + '" oninput="accDraftSet(this)">';
+}
 
 function accRow(a, i) {
-  var dis = accBusy ? ' disabled' : '', credit = a.kind === 'credit';
-  var h = '<div class="mgrow"><span class="mgn">' + (credit ? '💳 ' : '🏦 ') + esc(a.name || a.last4) + '</span>';
-  h += '<span class="sub">' + (credit ? t('acc.cycle', { d: a.cycleDay }) : t('acc.self')) + '</span>';
-  h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'edit\')" aria-label="' + esc(t('mg.rename')) + '"><i class="ic ic-edit"></i></button>';
+  var dis = sbAny() ? ' disabled' : '', credit = a.kind === 'credit';
+  var h = '<div class="mgrow acrow" data-k="a:' + esc(a.kind + ':' + a.last4) + '"><span class="acic">' + (credit ? '💳' : '🏦') + '</span>'
+    + '<span class="mgn"><span class="acn">' + esc(a.name || kindLabel(a.kind)) + '</span>'
+    + '<span class="acm"><span class="acx">x-' + esc(a.last4) + '</span><span class="pill' + (credit ? ' c' : ' t') + '">' + esc(kindLabel(a.kind)) + '</span></span></span>';
+  h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'edit\')" aria-label="' + esc(t('acc.edit')) + '"><i class="ic ic-edit"></i></button>';
   h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'del\')" aria-label="' + esc(t('mg.delete')) + '"><i class="ic ic-delete"></i></button></div>';
   if (!acc || acc.i !== i) return h;
-  h += '<div class="mgp">';
+  h += '<div class="mgp xpanel' + xpc('acc') + '">';
   if (acc.mode === 'edit') {
-    h += '<div class="lab">' + te('acc.newNum', { last4: a.last4 }) + '</div><input id="acNum" inputmode="numeric" autocomplete="off" value="' + esc(acc.num || '') + '">';
-    if (credit) h += '<div class="lab" style="margin-top:8px">' + t('acc.day') + '</div><input id="acDay" inputmode="numeric" autocomplete="off" value="' + esc(acc.day != null ? acc.day : a.cycleDay) + '">';
-    h += '<div class="btns"><button class="pri"' + dis + ' onclick="accSave()">' + t('mg.save') + '</button><button' + dis + ' onclick="accCancel()">' + t('mg.cancel') + '</button></div>';
+    h += accInput('acName', t('acc.namePh'), 'maxlength="30"', a.name);
+    h += accInput('acNum', t('acc.newNum', { last4: a.last4 }), 'inputmode="numeric"', '');
+    h += '<div class="btns"><button class="pri' + sbCls('acc') + '"' + dis + ' onclick="accSave()">' + t('mg.save') + '</button><button' + dis + ' onclick="accCancel()">' + t('mg.cancel') + '</button></div>';
   } else {
-    h += '<div class="txt">' + te('acc.delAsk', { name: a.name || a.last4 }) + '</div>';
-    h += '<div class="btns"><button class="dng"' + dis + ' onclick="accDel()">' + t('mg.delGo') + '</button><button' + dis + ' onclick="accCancel()">' + t('mg.cancel') + '</button></div>';
+    h += '<div class="txt">' + te('acc.delAsk', { name: (a.name || kindLabel(a.kind)) + ' x-' + a.last4 }) + '</div>';
+    h += '<div class="btns"><button class="dng' + sbCls('acc') + '"' + dis + ' onclick="accDel()">' + t('mg.delGo') + '</button><button' + dis + ' onclick="accCancel()">' + t('mg.cancel') + '</button></div>';
   }
-  if (accErr) h += '<div class="err">' + esc(accErr) + '</div>';
   return h + '</div>';
 }
 
 function accInner(d) {
-  var list = d.accounts || [], dis = accBusy ? ' disabled' : '';
-  var cards = list.filter(function (a) { return a.kind === 'credit'; });
+  var list = d.accounts || [], dis = sbAny() ? ' disabled' : '';
   var h = '<h2>' + t('acc.title') + '</h2><div class="sub">' + t('acc.hint') + '</div>';
-  if (cards.length > 1) {
-    h += '<div class="accyc"><div class="lab">' + t('acc.appCycle') + '</div><div class="sub">' + t('acc.appCycleHint') + '</div>';
-    h += '<div class="addrow"><input id="cyApp" inputmode="numeric" autocomplete="off" value="' + esc(d.cycleSetting || d.cycleDay || '') + '"><button' + dis + ' onclick="accCycle()">' + t('mg.save') + '</button></div></div>';
-  }
-  if (!list.length) h += '<div class="sub" style="padding:8px 0">' + t('acc.empty') + '</div>';
+  if (!list.length) h += '<div class="sub acempty">' + t('acc.empty') + '</div>';
   list.forEach(function (a, i) { h += accRow(a, i); });
-  var credit = accKind === 'credit';
-  h += '<div class="accadd"><div class="seg"><button type="button" class="' + (credit ? 'on' : '') + '" onclick="accKindSet(\'credit\')">' + t('acc.credit') + '</button><button type="button" class="' + (credit ? '' : 'on') + '" onclick="accKindSet(\'bank\')">' + t('acc.bank') + '</button></div>';
-  h += '<div class="addrow"><input id="acNewNum" inputmode="numeric" autocomplete="off" placeholder="' + esc(t(credit ? 'acc.numCredit' : 'acc.numBank')) + '">';
-  if (credit) h += '<input id="acNewDay" class="day" inputmode="numeric" autocomplete="off" placeholder="' + esc(t('acc.day')) + '">';
-  h += '<button' + dis + ' onclick="accAdd()">' + t('acc.add') + '</button></div><div class="sub" style="margin-top:6px">' + t('acc.numHint') + '</div></div>';
-  if (!acc && accErr) h += '<div class="err">' + esc(accErr) + '</div>';
+  if (!accAdding) {
+    h += '<button type="button" class="addlong"' + dis + ' onclick="accAddOpen()"><i class="ic ic-add"></i>' + t('acc.addLong') + '</button>';
+  } else {
+    var credit = accKind === 'credit';
+    h += '<div class="mgp xpanel accform' + xpc('accadd') + '"><div class="lab">' + t('acc.addLong') + '</div>';
+    h += accInput('acNewName', t('acc.namePh'), 'maxlength="30"', '');
+    h += '<select id="acKind" data-title="' + esc(t('acc.kind')) + '" onchange="accKindSet(this.value)">' + opt('credit', t('acc.credit'), accKind) + opt('bank', t('acc.bank'), accKind) + '</select>';
+    h += accInput('acNewNum', t(credit ? 'acc.numCredit' : 'acc.numBank'), 'inputmode="numeric"', '');
+    h += '<div class="sub" style="margin-top:6px">' + t('acc.numHint') + '</div>';
+    h += '<div class="btns"><button class="pri' + sbCls('accadd') + '"' + dis + ' onclick="accAdd()">' + t('mg.save') + '</button><button' + dis + ' onclick="accAddClose()">' + t('mg.cancel') + '</button></div></div>';
+  }
   return h;
 }
 
-function renderAcc() { var b = $('accbox'); if (b && DATA) b.innerHTML = icons(accInner(DATA)); }
+function renderAcc() {
+  var b = $('accbox');
+  if (!b || !DATA) return;
+  b.innerHTML = icons(accInner(DATA));
+  if (xpNext === 'acc' || xpNext === 'accadd') xpNext = '';
+  enhance(b); flashIn(b);
+}
 
-function accRun(name, args) {
-  accBusy = true; accErr = ''; renderAcc();
-  api(name, args).then(function () { accBusy = false; acc = null; accErr = ''; load(); }, function (e) {
-    accBusy = false;
-    if (!guard(e)) { accErr = errMsg(e); renderAcc(); }
+/** เรียก API ของส่วนบัญชี: ปุ่มหมุน → ✓ → แผงหุบ แล้วแถวที่เพิ่ม/แก้กะพริบ; พลาด = toast แผงค้างไว้ */
+function accRun(id, name, args, k) {
+  SB[id] = 'busy'; renderAcc();
+  api(name, args).then(function () {
+    SB[id] = 'done'; buzz(); renderAcc();
+    setTimeout(function () {
+      collapseThen(function () {
+        delete SB[id]; acc = null; accAdding = false; accDraft = {};
+        if (k) flashK = k;
+        renderAcc(); load();
+      });
+    }, 550);
+  }, function (e) {
+    delete SB[id];
+    if (!guard(e)) { toast(errMsg(e)); renderAcc(); }
   });
 }
 function val(id) { var el = $(id); return el ? el.value.trim() : ''; }
 function dayOk(v) { var n = Number(v); return n >= 1 && n <= 31 && Math.floor(n) === n; }
-function accOpen(i, mode) { acc = { i: i, mode: mode }; accErr = ''; renderAcc(); var el = $('acNum'); if (el) el.focus(); }
-function accCancel() { acc = null; accErr = ''; renderAcc(); }
-function accKindSet(k) { accKind = k; accErr = ''; renderAcc(); }
+/** เลข 4 หลักที่ฝั่งชีตจะเก็บ (ตรงกับ accDigits_ ใน Code.gs) ใช้หาแถวที่จะกะพริบ */
+function last4Of(kind, num) { var dg = String(num || '').replace(/\D/g, ''); return kind === 'bank' && dg.length === 10 ? dg.slice(5, 9) : dg.slice(-4); }
+function accOpen(i, mode) {
+  acc = { i: i, mode: mode }; accAdding = false; accDraft = {}; xpNext = 'acc';
+  renderAcc();
+  var el = $('acName'); if (el) el.focus();
+}
+function accCancel() { collapseThen(function () { acc = null; accDraft = {}; renderAcc(); }); }
+function accAddOpen() {
+  acc = null; accAdding = true; accDraft = {}; xpNext = 'accadd';
+  renderAcc();
+  var el = $('acNewName'); if (el) el.focus();
+}
+function accAddClose() { collapseThen(function () { accAdding = false; accDraft = {}; renderAcc(); }); }
+function accKindSet(k) { accKind = k === 'bank' ? 'bank' : 'credit'; renderAcc(); }
 function accSave() {
-  var a = DATA.accounts[acc.i];
-  acc.num = val('acNum'); acc.day = a.kind === 'credit' ? val('acDay') : '';
-  if (a.kind === 'credit' && !dayOk(acc.day)) { accErr = t('acc.badDay'); renderAcc(); return; }
-  accRun('updateAccount', [a.row, a.last4, { number: acc.num, cycleDay: acc.day }]);
+  var a = DATA.accounts[acc.i], num = val('acNum');
+  accRun('acc', 'updateAccount', [a.row, a.last4, { name: val('acName'), number: num }], 'a:' + a.kind + ':' + (num ? last4Of(a.kind, num) : a.last4));
 }
-function accDel() { var a = DATA.accounts[acc.i]; accRun('deleteAccount', [a.row, a.last4]); }
+function accDel() { var a = DATA.accounts[acc.i]; accRun('acc', 'deleteAccount', [a.row, a.last4], ''); }
 function accAdd() {
-  var p = { kind: accKind, number: val('acNewNum'), cycleDay: accKind === 'credit' ? val('acNewDay') : '' };
-  if (accKind === 'credit' && !dayOk(p.cycleDay)) { accErr = t('acc.badDay'); renderAcc(); return; }
-  accRun('addAccount', [p]);
+  var p = { kind: accKind, name: val('acNewName'), number: val('acNewNum') };
+  accRun('accadd', 'addAccount', [p], 'a:' + p.kind + ':' + last4Of(p.kind, p.number));
 }
-function accCycle() {
+window.accOpen = accOpen; window.accCancel = accCancel; window.accKindSet = accKindSet; window.accAddOpen = accAddOpen; window.accAddClose = accAddClose;
+window.accSave = accSave; window.accDel = accDel; window.accAdd = accAdd;
+
+/* ---------- วันตัดรอบของทั้งแอป (ค่าเดียว) ---------- */
+
+function renderCy() {
+  var b = $('cybox');
+  if (!b || !DATA) return;
+  var dis = sbAny() ? ' disabled' : '', cur = $('cyApp') && document.activeElement === $('cyApp') ? $('cyApp').value : (DATA.cycleDay || '');
+  b.innerHTML = '<h2>' + t('cy.title') + '</h2><div class="sub">' + t('cy.hint') + '</div>'
+    + '<div class="addrow"><input id="cyApp" inputmode="numeric" autocomplete="off" placeholder="' + esc(t('cy.ph')) + '" value="' + esc(cur) + '">'
+    + '<button class="' + sbCls('cy') + '"' + dis + ' onclick="cySave()">' + t('mg.save') + '</button></div>';
+}
+function cySave() {
   var v = val('cyApp');
-  if (!dayOk(v)) { accErr = t('acc.badDay'); renderAcc(); return; }
-  accRun('setSetting', ['cycle_day', v]);
+  if (!dayOk(v)) { toast(t('acc.badDay')); return; }
+  SB.cy = 'busy'; renderCy();
+  api('setSetting', ['cycle_day', v]).then(function () {
+    SB.cy = 'done'; buzz(); renderCy(); animMain = true; load();
+    setTimeout(function () { delete SB.cy; renderCy(); }, 1200);
+  }, function (e) {
+    delete SB.cy;
+    if (!guard(e)) { toast(errMsg(e)); renderCy(); }
+  });
 }
-window.accOpen = accOpen; window.accCancel = accCancel; window.accKindSet = accKindSet;
-window.accSave = accSave; window.accDel = accDel; window.accAdd = accAdd; window.accCycle = accCycle;
+window.cySave = cySave;
 
 /* แทนอีโมจิในข้อความด้วยไอคอนจาก icons/ (Phosphor Thin, MIT) */
 function icons(h) {
@@ -748,6 +967,13 @@ function spark(a) {
   return '<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + pts.join(' ') + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
 }
 
+/** แถบพลังของค่าใช้จ่ายรวม (บัตร + โอน + เงินสด ในรอบนี้) เทียบ checkpoint รวม */
+function totalBar(d) {
+  var step = (d.steps && d.steps.total) || d.step || 10000, v = d.total.total;
+  var lvl = Math.max(0, Math.floor(v / step)), prev = lvl * step, pct = Math.max(0, Math.min(100, (v - prev) / step * 100));
+  return '<div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div><div class="cp"><span>' + money(prev) + '</span><span>' + money(prev + step) + '</span></div>';
+}
+
 function render() {
   var d = DATA, c = d.credit, tr = d.transfer;
   mg = null; mgErr = '';
@@ -760,8 +986,8 @@ function render() {
   var h = '';
   if (tab === 'out') {
     h += unBar(d) + suggestBlock(d) + '<div id="topslot"></div>';
-    h += '<div class="toprow"><section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
-    h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section>' + cashTile(d) + '</div><div class="split">';
+    h += '<div class="toprow"><section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big"><b data-n="' + Number(d.total.total) + '">' + money(d.total.total) + '</b><span>' + t('unit.baht') + '</span></div>';
+    h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div>' + totalBar(d) + '</section>' + cashTile(d) + '</div><div class="split">';
     h += streamCard('c', t('card.credit'), c, 'credit') + streamCard('t', t('card.transfer'), tr, 'transfer') + '</div>';
     if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
     h += catBlock(d) + recentBlock(d, 'out');
@@ -770,7 +996,11 @@ function render() {
   }
   $('app').innerHTML = icons(h);
   $('topslot').appendChild($('topbar'));
-  renderMg(); renderAcc();
+  if (xpNext === 'cat' || xpNext === 'un') xpNext = '';
+  enhance($('app'));
+  if (animMain && view === 'main') { animMain = false; animIn($('app')); }
+  flashIn($('app'));
+  renderMg(); renderAcc(); if (view === 'settings') renderCy();
 }
 
 /* ---------- เริ่มต้น ---------- */
@@ -782,18 +1012,18 @@ function applyStrings() {
   Array.prototype.forEach.call(document.querySelectorAll('[data-aria]'), function (el) { el.setAttribute('aria-label', t(el.getAttribute('data-aria'))); });
 }
 
-function busy() { if (mg || mgBusy || acc || accBusy) return true; var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
+function busy() { if (mg || acc || accAdding || sbAny() || !$('picker').hidden || !$('sheet').hidden) return true; var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
 
 applyStrings();
-$('prev').onclick = function () { offset--; load(); };
-$('next').onclick = function () { if (offset < 0) { offset++; load(); } };
+$('prev').onclick = function () { offset--; animMain = true; load(); };
+$('next').onclick = function () { if (offset < 0) { offset++; animMain = true; load(); } };
 $('rf').onclick = function () { load(true); };   // ปุ่มรีเฟรชข้ามแคชฝั่งเซิร์ฟเวอร์
 $('cout').onclick = function () { cashDir('out'); };
 $('cin').onclick = function () { cashDir('in'); };
 $('cgo').onclick = cashGo;
-$('cashClose').onclick = closeCash; $('sheetbg').onclick = closeCash;
-$('tabOut').onclick = function () { tab = 'out'; if (DATA) render(); };
-$('tabIn').onclick = function () { tab = 'in'; if (DATA) render(); };
+$('cashClose').onclick = function () { closeCash(); }; $('sheetbg').onclick = function () { closeCash(); };
+$('tabOut').onclick = function () { if (tab !== 'out') animMain = true; tab = 'out'; if (DATA) render(); };
+$('tabIn').onclick = function () { if (tab !== 'in') animMain = true; tab = 'in'; if (DATA) render(); };
 function tick() {
   if (document.hidden || busy()) return;
   if (view === 'main' && !$('main').hidden) load();
@@ -802,8 +1032,8 @@ function tick() {
 document.addEventListener('visibilitychange', tick);
 setInterval(tick, 60000);
 $('stback').onclick = closeSub;
-$('stprev').onclick = function () { ST.offset--; ST.data = null; ST.page = 0; renderStream(); loadStream(); };
-$('stnext').onclick = function () { if (ST.offset < 0) { ST.offset++; ST.data = null; ST.page = 0; renderStream(); loadStream(); } };
+$('stprev').onclick = function () { ST.offset--; ST.data = null; ST.page = 0; animSt = true; renderStream(); loadStream(); };
+$('stnext').onclick = function () { if (ST.offset < 0) { ST.offset++; ST.data = null; ST.page = 0; animSt = true; renderStream(); loadStream(); } };
 
 /* หน้าเว็บเองเปิดจากแคชในเครื่อง (sw.js); เมื่อมีเวอร์ชันใหม่ขึ้นปุ่มให้แตะโหลดใหม่ */
 if ('serviceWorker' in navigator) {

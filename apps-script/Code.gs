@@ -146,7 +146,7 @@ function ensureMigrated_() {
 }
 
 /* ---------- บัญชี/บัตร: อ่านจากชีต Accounts ---------- */
-// คอลัมน์: name, last4, kind (credit/bank/cash), cycle_day (เฉพาะบัตร), self (TRUE = บัญชีตัวเอง)
+// คอลัมน์: name (ชื่อที่ตั้ง ว่างได้), last4, kind (credit/bank/cash), cycle_day (ค่าเดิม ใช้เป็นค่าเริ่มต้นของวันตัดรอบแอปเท่านั้น), self (TRUE เสมอ)
 // ถ้าชีตยังไม่มี/ว่าง ใช้ Script properties เดิม (CYCLE_DAY, SELF_ACCOUNTS) แทนจนกว่าจะรัน migrateAccounts
 
 const ACC_HEADERS = ['name', 'last4', 'kind', 'cycle_day', 'self'];
@@ -173,6 +173,7 @@ function accounts_() {
         last4: last4,
         kind: kind === 'bank' || kind === 'cash' ? kind : 'credit',
         cycleDay: cd >= 1 && cd <= 31 ? Math.floor(cd) : DEFAULT_CYCLE_DAY,
+        hasDay: cd >= 1 && cd <= 31,
         self: r[4] === true || String(r[4]).trim().toLowerCase() === 'true'
       });
     });
@@ -181,15 +182,13 @@ function accounts_() {
   return list;
 }
 
-/** วันตัดรอบของทั้งแอป: บัตรใบเดียว = วันของบัตรนั้น; หลายใบ = ค่า cycle_day ในชีต Settings (ไม่ตั้ง = บัตรใบแรก)
- *  ไม่มีบัตรในชีต Accounts ใช้ CYCLE_DAY เดิม */
+/** วันตัดรอบของทั้งแอป (มีค่าเดียว ไม่มีรอบรายบัตร): ค่า cycle_day ในชีต Settings
+ *  ยังไม่ตั้ง = ใช้วันตัดรอบเดิมของบัตรใบแรกในชีต Accounts ถ้ามี ไม่งั้น CYCLE_DAY เดิม */
 function cycleDay_() {
-  const cards = accounts_().filter(a => a.kind === 'credit');
-  if (cards.length > 1) {
-    const v = Number(settings_().cycle_day);
-    if (v >= 1 && v <= 31) return Math.floor(v);
-  }
-  return cards.length ? cards[0].cycleDay : (Number(cfg_('CYCLE_DAY', String(DEFAULT_CYCLE_DAY))) || DEFAULT_CYCLE_DAY);
+  const v = Number(settings_().cycle_day);
+  if (v >= 1 && v <= 31) return Math.floor(v);
+  const card = accounts_().filter(a => a.kind === 'credit' && a.hasDay)[0];
+  return card ? card.cycleDay : (Number(cfg_('CYCLE_DAY', String(DEFAULT_CYCLE_DAY))) || DEFAULT_CYCLE_DAY);
 }
 
 /** สร้างชีต Accounts และย้ายค่า CYCLE_DAY / SELF_ACCOUNTS เดิมเข้าไปครั้งเดียว (ไม่ทำซ้ำถ้ามีข้อมูลแล้ว) */
@@ -616,7 +615,7 @@ function refNorm_(v) {
 function selfKeys_() {
   const acc = accounts_();
   if (acc.length) {
-    return acc.filter(a => a.self && a.kind === 'bank').map(a => {
+    return acc.filter(a => a.kind === 'bank').map(a => {   // ทุกบัญชีที่เพิ่มถือเป็นบัญชีตัวเอง
       const dg = a.last4.replace(/\D/g, '');
       return dg.length >= 4 ? refNorm_(dg.slice(-4)) : '';
     }).filter(Boolean);
@@ -819,10 +818,11 @@ function api_(b) {
 
 /* ---------- ตั้งค่า: ชีต Settings (key, value) ใช้ร่วมทุกเครื่อง ---------- */
 // key ที่ยอมรับ: step_credit, step_transfer = ขีด checkpoint ของการ์ดแต่ละใบ (บาท) ถ้าไม่ตั้งใช้ CHECKPOINT_STEP
-//               cycle_day = วันตัดรอบของทั้งแอป (ใช้เมื่อมีบัตรเครดิตหลายใบ)
+//               step_total = ขีด checkpoint ของค่าใช้จ่ายรวม (บัตร + โอน + เงินสด)
+//               cycle_day = วันตัดรอบของทั้งแอป (ค่าเดียว ใช้ทุกการ์ด)
 
 const SETTINGS_HEADERS = ['key', 'value'];
-const SETTING_KEYS = { step_credit: 'num', step_transfer: 'num', cycle_day: 'day' };
+const SETTING_KEYS = { step_total: 'num', step_credit: 'num', step_transfer: 'num', cycle_day: 'day' };
 
 function settings_() {
   const sh = SpreadsheetApp.getActive().getSheetByName('Settings');
@@ -862,7 +862,8 @@ function setSetting(appKey, key, value) {
 
 /* ---------- บัญชี/บัตร: เพิ่ม แก้ ลบ จากหน้าตั้งค่า ----------
  * เก็บแค่ 4 หลักที่ใช้จับคู่กับแจ้งเตือน: บัตร = 4 ตัวท้าย; บัญชีเลขเต็ม 10 หลัก = หลักที่ 6-9 (ที่ K PLUS แสดง) ไม่งั้น 4 ตัวท้าย
- * บัญชีธนาคารเป็นบัญชีตัวเองเสมอ (self = TRUE) */
+ * ทุกบัญชี/บัตรที่เพิ่มเป็นของตัวเองเสมอ (self = TRUE) ไม่มีวันตัดรอบรายบัตร (ใช้วันตัดรอบของทั้งแอป)
+ * name = ชื่อที่ผู้ใช้ตั้ง (ไม่บังคับ ว่างได้ หน้าเว็บแสดงชื่อประเภทแทน) */
 
 function checkDay_(v) {
   const n = Number(String(v).trim());
@@ -878,6 +879,12 @@ function accDigits_(kind, number) {
 
 function accName_(kind, last4) { return (kind === 'credit' ? 'บัตรเครดิต' : 'บัญชี') + ' •' + last4; }
 
+function accLabel_(v) {
+  const n = String(v == null ? '' : v).trim();
+  if (n.length > 30) throw new Error('ชื่อต้องยาวไม่เกิน 30 ตัว');
+  return n;
+}
+
 function accSheet_() {
   const sh = ensureSheet_(SpreadsheetApp.getActive(), 'Accounts', ACC_HEADERS);
   clearAccCache_();
@@ -888,26 +895,26 @@ function accDup_(kind, last4, skipRow) {
   return accounts_().some(a => a.kind === kind && a.row !== skipRow && refNorm_(a.last4) === refNorm_(last4));
 }
 
-/** p = { kind: 'credit'|'bank', number, cycleDay (บัตรเครดิตเท่านั้น) } */
+/** p = { kind: 'credit'|'bank', number, name (ไม่บังคับ) } */
 function addAccount(appKey, p) {
   checkAppKey_(appKey);
   p = p || {};
   const kind = p.kind === 'bank' ? 'bank' : (p.kind === 'credit' ? 'credit' : '');
   if (!kind) throw new Error('ต้องเลือกประเภท');
   const last4 = accDigits_(kind, p.number);
-  const cd = kind === 'credit' ? checkDay_(p.cycleDay) : '';
+  const name = accLabel_(p.name);
   return withLock_(function () {
     const sh = accSheet_();
     if (accDup_(kind, last4, 0)) throw new Error('มีหมายเลขนี้อยู่แล้ว');
     const row = sh.getLastRow() + 1;
     sh.getRange(row, 2).setNumberFormat('@');
-    sh.getRange(row, 1, 1, ACC_HEADERS.length).setValues([[accName_(kind, last4), last4, kind, cd, kind === 'bank']]);
+    sh.getRange(row, 1, 1, ACC_HEADERS.length).setValues([[name, last4, kind, '', true]]);
     clearAccCache_();
     return { ok: true, row: row };
   });
 }
 
-/** แก้หมายเลขและ/หรือวันตัดรอบของแถว row (ตรวจว่ายังเป็นแถวเดิมด้วย last4 เดิม) ประเภทเปลี่ยนไม่ได้ */
+/** แก้ชื่อและ/หรือหมายเลขของแถว row (ตรวจว่ายังเป็นแถวเดิมด้วย last4 เดิม) ประเภทเปลี่ยนไม่ได้ ช่อง cycle_day เดิมคงไว้ */
 function updateAccount(appKey, row, oldLast4, p) {
   checkAppKey_(appKey);
   p = p || {};
@@ -917,10 +924,10 @@ function updateAccount(appKey, row, oldLast4, p) {
     if (!a || a.last4 !== String(oldLast4) || a.kind === 'cash') throw new Error('ไม่พบรายการนี้ (ข้อมูลอาจเปลี่ยนไปแล้ว ลองรีเฟรช)');
     const last4 = String(p.number || '').trim() ? accDigits_(a.kind, p.number) : a.last4;
     if (accDup_(a.kind, last4, a.row)) throw new Error('มีหมายเลขนี้อยู่แล้ว');
-    const cd = a.kind === 'credit' ? checkDay_(p.cycleDay) : '';
-    const auto = a.name === accName_(a.kind, a.last4) || !a.name;
+    const name = p.name !== undefined ? accLabel_(p.name) : (a.name === accName_(a.kind, a.last4) ? '' : a.name);
     sh.getRange(a.row, 2).setNumberFormat('@');
-    sh.getRange(a.row, 1, 1, ACC_HEADERS.length).setValues([[auto ? accName_(a.kind, last4) : a.name, last4, a.kind, cd, a.kind === 'bank' ? true : a.self]]);
+    sh.getRange(a.row, 1, 1, 2).setValues([[name, last4]]);
+    sh.getRange(a.row, 5).setValue(true);
     clearAccCache_();
     return { ok: true };
   });
@@ -1114,7 +1121,7 @@ function dashData_(offset) {
   const now = new Date();
   const b = cycleBounds_(now, offset || 0);
   const stt = settings_();
-  const steps = { credit: stepFor_('credit', stt), transfer: stepFor_('transfer', stt), cash: stepFor_('cash', stt) };
+  const steps = { credit: stepFor_('credit', stt), transfer: stepFor_('transfer', stt), cash: stepFor_('cash', stt), total: stepFor_('total', stt) };
   const today = fmt_(now, 'yyyy-MM-dd');
   const rows = ss.getSheetByName('Tx').getDataRange().getValues();
   const S = { credit: newStream_(), transfer: newStream_(), cash: newStream_() };
@@ -1216,15 +1223,14 @@ function dashData_(offset) {
     recent: list.slice(0, 40),
     untagged: list.filter(x => x.dir === 'out' && !x.tag).length,
     accounts: accounts_().filter(a => a.kind !== 'cash')
-      .map(a => ({ row: a.row, name: a.name, last4: a.last4, kind: a.kind, cycleDay: a.kind === 'credit' ? a.cycleDay : '' })),
+      .map(a => ({ row: a.row, name: a.name === accName_(a.kind, a.last4) ? '' : a.name, last4: a.last4, kind: a.kind })),
     cycleDay: cycleDay_(),
     cycleSetting: Number(stt.cycle_day) || ''
   };
 }
 
 /**
- * หน้าลงลึกของการ์ด: credit แยกตามบัตร (ref = เลขท้ายบัตร) แต่ละใบใช้รอบของตัวเอง บัตรที่ไม่อยู่ในชีต Accounts ใช้รอบของทั้งแอป
- * transfer แยกตามบัญชี (ref) ใช้รอบของทั้งแอป  ยอดคิดแบบเดียวกับ dashData_ (ข้าม = ไม่นับ, เงินคืนที่ยืนยันแล้วหักยอด)
+ * หน้าลงลึกของการ์ด: credit แยกตามบัตร (ref = เลขท้ายบัตร), transfer แยกตามบัญชี (ref) ทุกใบใช้รอบของทั้งแอป  ยอดคิดแบบเดียวกับ dashData_ (ข้าม = ไม่นับ, เงินคืนที่ยืนยันแล้วหักยอด)
  */
 function streamData_(stream, offset) {
   const now = new Date();
@@ -1233,8 +1239,7 @@ function streamData_(stream, offset) {
   accounts_().filter(a => a.kind === (stream === 'credit' ? 'credit' : 'bank')).forEach(a => {
     const k = refNorm_(a.last4.replace(/\D/g, '').slice(-4));
     if (!k || groups[k]) return;
-    const b = stream === 'credit' ? cycleBounds_(now, offset, a.cycleDay) : app;
-    groups[k] = { key: k, name: a.name, last4: a.last4, known: true, b: b, total: 0, count: 0, items: 0 };
+    groups[k] = { key: k, name: a.name === accName_(a.kind, a.last4) ? '' : a.name, last4: a.last4, known: true, b: app, total: 0, count: 0, items: 0 };
     order.push(k);
   });
   const rows = SpreadsheetApp.getActive().getSheetByName('Tx').getDataRange().getValues();
