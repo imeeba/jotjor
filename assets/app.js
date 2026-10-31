@@ -8,7 +8,7 @@ var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
 var recentPage = { out: 0, in: 0 }, offset = 0, DATA = null, tab = 'out', catAmt = false, catSubs = false, unOpen = false;
 var mg = null, mgErr = '', mgNew = '', MGL = [];
-var cDir = 'out', cBusy = false;
+var cDir = 'out', cBusy = false, cWhen = '';
 var ST = { stream: '', offset: 0, data: null, page: 0, acct: null };   // หน้าลงลึกของการ์ด
 var acc = null, accKind = 'credit', accAdding = false, accDraft = {};   // ส่วนบัญชีและบัตรในหน้าตั้งค่า
 var pending = 0, wgen = 0;   // จำนวนการเขียนที่ยังค้าง / ตัวนับรุ่นของการแก้ ใช้ทิ้งผลโหลดที่เก่ากว่าหน้าจอ
@@ -111,6 +111,21 @@ function sheetClose(id, cb) {
   w.classList.add('out');
   setTimeout(function () { w.hidden = true; w.classList.remove('out'); if (cb) cb(); }, 190);
 }
+
+/* คีย์บอร์ดมือถือ: ยก sheet ขึ้นเหนือคีย์บอร์ด (visualViewport) และเลื่อนช่องที่กำลังพิมพ์ให้เห็นเสมอ
+ * Android ใช้ interactive-widget=resizes-content ใน viewport อยู่แล้ว ส่วนนี้ช่วย iOS และเบราว์เซอร์ที่ไม่รองรับ */
+function kbFix() {
+  var vv = window.visualViewport, r = document.documentElement;
+  if (!vv) return;
+  r.style.setProperty('--kb', Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) + 'px');
+  r.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+}
+if (window.visualViewport) { window.visualViewport.addEventListener('resize', kbFix); window.visualViewport.addEventListener('scroll', kbFix); kbFix(); }
+document.addEventListener('focusin', function (ev) {
+  var el = ev.target;
+  if (!el || el.tagName !== 'INPUT' || !el.closest('.sheetbox')) return;
+  setTimeout(function () { kbFix(); el.scrollIntoView({ block: 'center', behavior: RM ? 'auto' : 'smooth' }); }, 320);
+});
 
 /** แทน <select> ทุกตัวใน root ด้วยปุ่มที่เปิด bottom sheet; select ตัวจริงซ่อนไว้ เก็บค่าและ onchange เดิม */
 function enhance(root) {
@@ -265,7 +280,7 @@ $('stSave').onclick = function () {
 function showView(v) {
   var same = v === view;
   function swap() {
-    view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings'; $('stream').hidden = v !== 'stream';
+    view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings'; $('stream').hidden = v !== 'stream'; $('ov').hidden = v !== 'ov';
     if (v === 'settings') { fillSteps(); renderCy(); renderAcc(); renderMg(); }
     if (v === 'main' && !same && DATA) { animMain = true; render(); }
     if (v !== 'main') window.scrollTo(0, 0);
@@ -422,14 +437,14 @@ function patchCash(d, p) {
 
 function cashGo() {
   if (cBusy) return;
-  var p = { dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: $('cwhen').value }, btn = $('cgo');
+  var p = { dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: cWhen }, btn = $('cgo');
   if (!(Number(String(p.amount).replace(/,/g, '')) > 0) || !DATA) {   // ยอดไม่ถูกต้อง: ให้ฝั่งชีตตอบข้อความผิดพลาดตามเดิม
     cBusy = true; sbSet(btn, 'busy'); cashMsg('');
     api('addCash', [p]).then(function () {
       cBusy = false; sbSet(btn, 'done'); buzz();
       setTimeout(function () {
         sbSet(btn, '');
-        $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = '';
+        $('camt').value = ''; $('cmer').value = ''; whenSet('');
         closeCash(); load();
       }, 500);
     }, function (e) {
@@ -442,11 +457,11 @@ function cashGo() {
   cBusy = true; sbSet(btn, 'done');
   setTimeout(function () {
     cBusy = false; sbSet(btn, '');
-    $('camt').value = ''; $('cmer').value = ''; $('cwhen').value = ''; cashMsg('');
+    $('camt').value = ''; $('cmer').value = ''; whenSet(''); cashMsg('');
     closeCash(function () {
       flashK = 'new';
       optimistic(function (d) { patchCash(d, p); }, function () { return api('addCash', [p]); }, 'cash.fail', function (e) {
-        $('camt').value = p.amount; $('cmer').value = p.merchant; $('cwhen').value = p.when;   // คืนค่าที่กรอกไว้ให้แก้แล้วกดใหม่
+        $('camt').value = p.amount; $('cmer').value = p.merchant; whenSet(p.when);   // คืนค่าที่กรอกไว้ให้แก้แล้วกดใหม่
         openCash(); toast(t('cash.fail', { e: errMsg(e) }));
       });
     });
@@ -487,7 +502,7 @@ function tagOpts(d, cur) {
   return h + opt('ข้าม', t('tag.skip'), cur);   // ค่า 'ข้าม' คือค่าที่เก็บในชีต ต้องตรงกับ SKIP_TAG ฝั่ง Apps Script
 }
 
-/* ----- จัดการแท็ก: เพิ่ม / เปลี่ยนชื่อ / ลบ (ยืนยันในหน้า ไม่ใช้ alert/confirm/prompt) ----- */
+/* ----- จัดการแท็ก: เพิ่ม / แก้ไข (ชื่อ + ย้าย) / ลบ ทั้งหมดใน bottom sheet (ไม่ใช้ alert/confirm/prompt) ----- */
 
 function useOf(map, it) {
   var n = 0;
@@ -511,41 +526,83 @@ function mgRow(d, i) {
   return h;
 }
 
-function mgPanel(d, i) {
-  if (!mg || mg.i !== i) return '';
-  var it = MGL[i], dis = sbAny() ? ' disabled' : '';
+function btns(okCls, okFn, okLabel, sbId) {
+  var dis = sbAny() ? ' disabled' : '';
+  return '<div class="btns"><button type="button"' + dis + ' onclick="fsCancel()">' + t('mg.cancel') + '</button><button type="button" class="' + okCls + sbCls(sbId) + '"' + dis + ' onclick="' + okFn + '()">' + okLabel + '</button></div>';
+}
+function fld(label, inner) { return '<div class="fld"><div class="lab">' + label + '</div>' + inner + '</div>'; }
+function mgInput(ph, val) { return '<input id="mgin" maxlength="20" autocomplete="off" placeholder="' + esc(ph || '') + '" value="' + esc(val) + '" oninput="mgDraft(this.value)">'; }
+
+/** ข้อความยืนยันการย้าย: บอกปลายทาง แท็กรองที่ย้ายตาม และชื่อที่ชนแล้วจะรวมกัน */
+function moveMsg(d, it, dest, leaf) {
+  var q = function (s) { return '“' + s + '”'; }, merge = [], h;
+  if (!it.isMain && !dest) {
+    if (d.tags.indexOf(leaf) >= 0) merge.push(q(leaf));
+    h = te('mg.moveUp', { name: it.main + t('tag.sep') + it.sub, to: leaf });
+  } else {
+    var have = d.tagOptions[dest] || [];
+    if (have.indexOf(leaf) >= 0) merge.push(q(dest + t('tag.sep') + leaf));
+    if (!it.isMain) h = te('mg.moveSub', { name: it.main + t('tag.sep') + it.sub, dest: dest, to: dest + t('tag.sep') + leaf });
+    else {
+      h = te('mg.moveMain', { name: it.main, dest: dest, to: dest + t('tag.sep') + leaf });
+      var own = d.tagOptions[it.main] || [];
+      if (own.length) h += '<div class="txt mt">' + te('mg.moveSubsFollow', { name: it.main, dest: dest, list: own.join(', ') }) + '</div>';
+      own.forEach(function (s) { if (have.indexOf(s) >= 0 || s === leaf) merge.push(q(dest + t('tag.sep') + s)); });
+    }
+  }
+  h = '<div class="txt">' + h + '</div>';
+  if (merge.length) h += '<div class="warnb">' + te('mg.moveMerge', { list: merge.join(', ') }) + '</div>';
+  var n = useOf(d.usage, it);
+  if (n) h += '<div class="sub mt">' + t('mg.moveUse', { n: n }) + '</div>';
+  return h;
+}
+
+/** เนื้อหาใน sheet ของแท็กตามโหมด คืน [หัวเรื่อง, html] */
+function mgSheet(d) {
+  var it = mg.it, h = '', title = '';
   var cur = it.isMain ? it.main : it.sub;
-  var h = '<div class="mgp xpanel' + xpc('mg') + '">', sb = sbCls('mg');
-  if (mg.mode === 'rename') {
-    h += '<div class="lab">' + te('mg.renameTo', { name: it.full }) + '</div>';
-    h += '<input id="mgin" maxlength="20" value="' + esc(mg.draft != null ? mg.draft : cur) + '">';
-    h += '<div class="btns"><button class="pri' + sb + '"' + dis + ' onclick="mgRenameGo()">' + t('mg.save') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
+  if (mg.mode === 'edit') {
+    title = t('mg.editTitle');
+    var par = mg.parent, ph = '<select id="mgpar" data-title="' + esc(t('mg.parent')) + '" onchange="mgParSet(this.value)">' + opt('', t('mg.asMain'), par);
+    d.tags.forEach(function (m) { if (!(it.isMain && m === it.main)) ph += opt(m, m, par); });
+    h += fld(t('mg.name'), mgInput('', mg.draft != null ? mg.draft : cur)) + fld(t('mg.parent'), ph + '</select>');
+    h += btns('pri', 'mgEditGo', t('mg.save'), 'mg');
   } else if (mg.mode === 'merge') {
+    title = t('mg.editTitle');
     h += '<div class="txt">' + te('mg.mergeMsg', { draft: mg.draft, name: it.full, target: mg.target, count: mg.count }) + '</div>';
-    h += '<div class="btns"><button class="dng' + sb + '"' + dis + ' onclick="mgMergeGo()">' + t('mg.mergeGo') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
+    h += btns('dng', 'mgMergeGo', t('mg.mergeGo'), 'mg');
+  } else if (mg.mode === 'move') {
+    title = t('mg.moveTitle');
+    h += moveMsg(d, it, mg.parent, String(mg.draft || '').trim() || cur);
+    h += btns('pri', 'mgMoveGo', t('mg.moveGo'), 'mg');
   } else if (mg.mode === 'addsub') {
-    h += '<div class="lab">' + te('mg.addSubTo', { main: it.main }) + '</div>';
-    h += '<input id="mgin" maxlength="20" placeholder="' + esc(t('mg.subName')) + '" value="' + esc(mg.draft || '') + '">';
-    h += '<div class="btns"><button class="pri' + sb + '"' + dis + ' onclick="mgAddSubGo()">' + t('mg.add') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
+    title = te('mg.addSubTo', { main: it.main });
+    h += fld(t('mg.subName'), mgInput('', mg.draft || ''));
+    h += btns('pri', 'mgAddSubGo', t('mg.add'), 'mg');
+  } else if (mg.mode === 'addmain') {
+    title = t('mg.addMainTitle');
+    h += fld(t('mg.name'), mgInput('', mg.draft || ''));
+    h += btns('pri', 'mgAddMain', t('mg.add'), 'mg');
   } else if (mg.mode === 'delete') {
+    title = t('mg.delTitle');
     var nTx = useOf(d.usage, it), nRu = useOf(d.ruleUsage, it);
     h += '<div class="txt">' + te('mg.delAsk', { name: it.full }) + (it.isMain ? t('mg.delSubs') : '') + '</div>';
     if (nTx + nRu > 0) {
-      h += '<div class="sub" style="margin-top:4px">' + t('mg.delUse', { tx: nTx, rules: nRu ? t('mg.delRules', { n: nRu }) : '' }) + '</div>';
-      h += '<div class="lab" style="margin-top:8px">' + t('mg.moveTo') + '</div><select id="mgmv" data-title="' + esc(t('mg.moveTo')) + '">' + opt('', t('mg.moveNone'), '');
+      h += '<div class="sub mt">' + t('mg.delUse', { tx: nTx, rules: nRu ? t('mg.delRules', { n: nRu }) : '' }) + '</div>';
+      var s = '<select id="mgmv" data-title="' + esc(t('mg.moveTo')) + '" onchange="mgMvSet(this.value)">' + opt('', t('mg.moveNone'), mg.mv);
       d.tags.forEach(function (m) {
-        if (!inSetOf(it, m)) h += opt(m, m, '');
-        (d.tagOptions[m] || []).forEach(function (s) {
-          var f = m + '/' + s;
-          if (!inSetOf(it, f)) h += opt(f, m + t('tag.sep') + s, '');
+        if (!inSetOf(it, m)) s += opt(m, m, mg.mv);
+        (d.tagOptions[m] || []).forEach(function (x) {
+          var f = m + '/' + x;
+          if (!inSetOf(it, f)) s += opt(f, m + t('tag.sep') + x, mg.mv);
         });
       });
-      h += opt('ข้าม', t('tag.skip'), '') + '</select>';
+      h += fld(t('mg.moveTo'), s + opt('ข้าม', t('tag.skip'), mg.mv) + '</select>' + (nRu ? '<div class="sub hint">' + t('mg.moveNoneRules') + '</div>' : ''));
     }
-    h += '<div class="btns"><button class="dng' + sb + '"' + dis + ' onclick="mgDelGo()">' + t('mg.delGo') + '</button><button' + dis + ' onclick="mgCancel()">' + t('mg.cancel') + '</button></div>';
+    h += btns('dng', 'mgDelGo', t('mg.delGo'), 'mg');
   }
   if (mgErr) h += '<div class="err">' + esc(mgErr) + '</div>';
-  return h + '</div>';
+  return [title, h];
 }
 
 function mgInner(d) {
@@ -555,15 +612,14 @@ function mgInner(d) {
   d.tags.forEach(function (m) {
     var im = MGL.length;
     MGL.push({ full: m, main: m, sub: '', isMain: true });
-    h += mgRow(d, im) + mgPanel(d, im);
+    h += mgRow(d, im);
     (d.tagOptions[m] || []).forEach(function (s) {
       var is = MGL.length;
       MGL.push({ full: m + '/' + s, main: m, sub: s, isMain: false });
-      h += mgRow(d, is) + mgPanel(d, is);
+      h += mgRow(d, is);
     });
   });
-  h += '<div class="addrow"><input id="mgnew" maxlength="20" placeholder="' + esc(t('mg.newMain')) + '" value="' + esc(mgNew) + '"><button class="' + sbCls('mgnew') + '"' + dis + ' onclick="mgAddMain()">' + t('mg.add') + '</button></div>';
-  if (!mg && mgErr) h += '<div class="err">' + esc(mgErr) + '</div>';
+  h += '<button type="button" class="addlong"' + dis + ' onclick="mgAddMainOpen()"><i class="ic ic-add"></i>' + t('mg.addMainLong') + '</button>';
   return h;
 }
 
@@ -571,29 +627,32 @@ function renderMg() {
   var b = $('mgbox');
   if (!b || !DATA) return;
   b.innerHTML = icons(mgInner(DATA));
-  if (xpNext === 'mg') xpNext = '';
   enhance(b); flashIn(b);
+  if (FS === 'mg') renderFs();
 }
 
-function mgOpen(i, mode) {
-  mg = { i: i, mode: mode, draft: null, target: '', count: 0 }; mgErr = ''; xpNext = 'mg';
-  renderMg();
-  var el = $('mgin'); if (el) el.focus();
+function mgOpen(it, mode) {
+  mg = { it: it, mode: mode, draft: null, parent: it && !it.isMain ? it.main : '', mv: '', target: '', count: 0 }; mgErr = '';
+  fsShow('mg');
 }
-function mgRenameOpen(i) { mgOpen(i, 'rename'); }
-function mgAddSubOpen(i) { mgOpen(i, 'addsub'); }
-function mgDelOpen(i) { mgOpen(i, 'delete'); }
-function mgCancel() { collapseThen(function () { mg = null; mgErr = ''; renderMg(); }); }
-function mgDone(k) { mg = null; mgErr = ''; mgNew = ''; if (k) flashK = 't:' + k; renderMg(); load(); }
+function mgRenameOpen(i) { mgOpen(MGL[i], 'edit'); }
+function mgAddSubOpen(i) { mgOpen(MGL[i], 'addsub'); }
+function mgDelOpen(i) { mgOpen(MGL[i], 'delete'); }
+function mgAddMainOpen() { mgOpen({ full: '', main: '', sub: '', isMain: true }, 'addmain'); }
+function mgDraft(v) { if (mg) mg.draft = v; }
+function mgParSet(v) { if (mg) mg.parent = v; }
+function mgMvSet(v) { if (mg) mg.mv = v; }
+function mgCancel() { fsHide(function () { mg = null; mgErr = ''; }); }
+function mgDone(k) { fsHide(function () { mg = null; mgErr = ''; if (k) flashK = 't:' + k; renderMg(); load(); }); }
 
-/** เรียก API ของส่วนแท็ก: ปุ่มหมุน → ✓ → แผงหุบ; พลาด = toast และแผงค้างไว้ */
-function mgRun(name, args, done, id) {
-  id = id || 'mg';
+/** เรียก API ของส่วนแท็ก: ปุ่มหมุน → ✓ → ปิด sheet; พลาด = toast และ sheet ค้างไว้ */
+function mgRun(name, args, done) {
+  var id = 'mg';
   SB[id] = 'busy'; mgErr = ''; renderMg();
   api(name, args).then(function (res) {
     if (res && res.needConfirm) { delete SB[id]; done(res); return; }
     SB[id] = 'done'; buzz(); renderMg();
-    setTimeout(function () { collapseThen(function () { delete SB[id]; done(res); }); }, 550);
+    setTimeout(function () { delete SB[id]; done(res); }, 550);
   }, function (e) {
     delete SB[id];
     if (!guard(e)) { toast(errMsg(e)); renderMg(); }
@@ -603,32 +662,64 @@ function mgRun(name, args, done, id) {
 function renamed(it, draft) { draft = String(draft || '').trim(); return it.isMain ? draft : it.main + '/' + draft; }
 function mgIn() { var el = $('mgin'); return el ? el.value : ''; }
 
-function mgRenameGo() {
-  var it = MGL[mg.i], dr = mg.draft = mgIn();
+/** บันทึกจาก sheet แก้ไข: ที่อยู่ไม่เปลี่ยน = เปลี่ยนชื่อ, เปลี่ยน = ไปหน้ายืนยันการย้ายก่อน */
+function mgEditGo() {
+  var it = mg.it, dr = mg.draft = mgIn(), par = mg.parent, curPar = it.isMain ? '' : it.main;
+  if (par !== curPar) { mg.mode = 'move'; renderFs(); return; }
   mgRun('renameTag', [it.full, dr, false], function (r) {
     if (r && r.needConfirm) { if (mg) { mg.mode = 'merge'; mg.count = r.count; mg.target = r.target; } renderMg(); return; }
     mgDone(renamed(it, dr));
   });
 }
+function mgMoveGo() {
+  var it = mg.it, par = mg.parent, leaf = String(mg.draft || '').trim() || (it.isMain ? it.main : it.sub);
+  mgRun('moveTag', [it.full, par, leaf], function () { mgDone(par ? par + '/' + leaf : leaf); });
+}
 function mgMergeGo() {
-  var it = MGL[mg.i], dr = mg.draft;
+  var it = mg.it, dr = mg.draft;
   mgRun('renameTag', [it.full, dr, true], function () { mgDone(renamed(it, dr)); });
 }
 function mgAddSubGo() {
-  var it = MGL[mg.i], dr = mg.draft = mgIn();
+  var it = mg.it, dr = mg.draft = mgIn();
   mgRun('addSubTag', [it.main, dr], function () { mgDone(it.main + '/' + String(dr).trim()); });
 }
 function mgDelGo() {
-  var it = MGL[mg.i], sel = $('mgmv');
-  mgRun('deleteTag', [it.full, sel ? sel.value : ''], function () { mgDone(); });
+  var it = mg.it;
+  mgRun('deleteTag', [it.full, mg.mv || ''], function () { mgDone(); });
 }
 function mgAddMain() {
-  var el = $('mgnew'); mgNew = el ? el.value : '';
-  mgRun('addMainTag', [mgNew], function () { mgDone(mgNew.trim()); }, 'mgnew');
+  var dr = mg.draft = mgIn();
+  mgRun('addMainTag', [dr], function () { mgDone(String(dr).trim()); });
 }
-window.mgRenameOpen = mgRenameOpen; window.mgAddSubOpen = mgAddSubOpen; window.mgDelOpen = mgDelOpen;
-window.mgCancel = mgCancel; window.mgRenameGo = mgRenameGo; window.mgMergeGo = mgMergeGo;
-window.mgAddSubGo = mgAddSubGo; window.mgDelGo = mgDelGo; window.mgAddMain = mgAddMain;
+window.mgRenameOpen = mgRenameOpen; window.mgAddSubOpen = mgAddSubOpen; window.mgDelOpen = mgDelOpen; window.mgAddMainOpen = mgAddMainOpen;
+window.mgDraft = mgDraft; window.mgParSet = mgParSet; window.mgMvSet = mgMvSet; window.mgEditGo = mgEditGo; window.mgMoveGo = mgMoveGo;
+window.mgMergeGo = mgMergeGo; window.mgAddSubGo = mgAddSubGo; window.mgDelGo = mgDelGo; window.mgAddMain = mgAddMain;
+
+/* ----- sheet ฟอร์มกลาง (แท็ก / บัญชีและบัตร) ----- */
+
+var FS = '';   // '' | 'mg' | 'acc' | 'accadd'
+function renderFs() {
+  if (!FS || !DATA) return;
+  var r = FS === 'mg' && mg ? mgSheet(DATA) : (FS === 'acc' && acc ? accSheet(DATA) : (FS === 'accadd' ? accAddSheet() : ['', '']));
+  $('fsTitle').textContent = r[0];
+  $('fsBody').innerHTML = icons(r[1]);
+  enhance($('fsBody'));
+}
+function fsShow(kind) {
+  FS = kind; renderFs(); sheetOpen('fsheet');
+  var el = $('fsBody').querySelector('input');
+  if (el) { try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); } }
+}
+function fsHide(cb) {
+  var a = document.activeElement; if (a && a.blur) a.blur();
+  sheetClose('fsheet', function () { FS = ''; $('fsBody').innerHTML = ''; if (cb) cb(); });
+}
+function fsCancel() {
+  if (sbAny()) return;
+  if (FS === 'mg') mgCancel(); else if (FS === 'acc') accCancel(); else if (FS === 'accadd') accAddClose(); else fsHide();
+}
+window.fsCancel = fsCancel;
+$('fsClose').onclick = fsCancel; $('fsbg').onclick = fsCancel;
 
 function catBlock(d) {
   var map = {}, total = 0;
@@ -702,6 +793,67 @@ function openCash() { sheetOpen('sheet'); cashMsg(''); }
 function closeCash(cb) { sheetClose('sheet', cb); }
 window.openCash = openCash;
 
+/* ----- sheet เลือกวันเวลาของเงินสด: ปุ่มลัด วันนี้/เมื่อวาน + ปฏิทินรายเดือน + ช่องเวลา ค่าที่ส่ง = 'yyyy-MM-ddTHH:mm' (เวลาไทย) หรือว่าง = ตอนนี้ ----- */
+
+var fParts = new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: BK });
+var fMonth = new Intl.DateTimeFormat('th-TH', { month: 'long', year: 'numeric', timeZone: BK });
+function bkNow(ms) {
+  var o = {};
+  fParts.formatToParts(new Date(ms == null ? Date.now() : ms)).forEach(function (p) { o[p.type] = p.value; });
+  return { y: Number(o.year), m: Number(o.month), d: Number(o.day), hh: o.hour === '24' ? '00' : o.hour, mm: o.minute };
+}
+function ymd(y, m, d) { return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d; }
+function whenMs(v) { return new Date(v + ':00+07:00').getTime(); }
+function whenSet(v) {
+  cWhen = v || '';
+  var b = $('cwhen');
+  b.className = 'selbtn whenbtn' + (cWhen ? '' : ' ph');
+  b.innerHTML = '<span>' + esc(cWhen ? t('cash.when') + ' · ' + fDT.format(new Date(whenMs(cWhen))) : t('cash.whenNow')) + '</span><i class="ic ic-calendar"></i>';
+}
+var DS = null;
+function dsOpen() {
+  var n = bkNow();
+  if (cWhen) {
+    var p = cWhen.split('T'), d = p[0].split('-');
+    DS = { y: Number(d[0]), m: Number(d[1]), sel: p[0], hh: p[1].slice(0, 2), mm: p[1].slice(3, 5) };
+  } else DS = { y: n.y, m: n.m, sel: ymd(n.y, n.m, n.d), hh: n.hh, mm: n.mm };
+  dsRender(); sheetOpen('dsheet');
+}
+function dsRender() {
+  var n = bkNow(), today = ymd(n.y, n.m, n.d), yd = bkNow(Date.now() - 86400000), yest = ymd(yd.y, yd.m, yd.d);
+  var h = '<div class="chips dchips"><button type="button" class="chip' + (DS.sel === today ? ' on' : '') + '" onclick="dsPick(\'' + today + '\')">' + t('date.today') + '</button>'
+    + '<button type="button" class="chip' + (DS.sel === yest ? ' on' : '') + '" onclick="dsPick(\'' + yest + '\')">' + t('date.yesterday') + '</button></div>';
+  var last = DS.y > n.y || (DS.y === n.y && DS.m >= n.m);
+  h += '<div class="calh"><button type="button" class="mb ib" onclick="dsMon(-1)" aria-label="' + esc(t('top.prev')) + '"><i class="ic ic-prev"></i></button><b>'
+    + esc(fMonth.format(new Date(Date.UTC(DS.y, DS.m - 1, 15)))) + '</b><button type="button" class="mb ib"' + (last ? ' disabled' : '') + ' onclick="dsMon(1)" aria-label="' + esc(t('top.next')) + '"><i class="ic ic-next"></i></button></div>';
+  h += '<div class="cal">';
+  t('date.days').split(',').forEach(function (w) { h += '<span class="calw">' + w + '</span>'; });
+  var first = new Date(Date.UTC(DS.y, DS.m - 1, 1)).getUTCDay(), dim = new Date(Date.UTC(DS.y, DS.m, 0)).getUTCDate(), i;
+  for (i = 0; i < first; i++) h += '<span></span>';
+  for (i = 1; i <= dim; i++) {
+    var k = ymd(DS.y, DS.m, i), fut = k > today;
+    h += '<button type="button" class="cald' + (k === DS.sel ? ' on' : '') + (k === today ? ' now' : '') + '"' + (fut ? ' disabled' : '') + ' onclick="dsPick(\'' + k + '\')">' + i + '</button>';
+  }
+  h += '</div>';
+  h += fld(t('date.time'), '<div class="timef"><input id="dsH" inputmode="numeric" maxlength="2" autocomplete="off" value="' + esc(DS.hh) + '" oninput="dsT(\'hh\',this.value)"><b>:</b><input id="dsM" inputmode="numeric" maxlength="2" autocomplete="off" value="' + esc(DS.mm) + '" oninput="dsT(\'mm\',this.value)"></div>');
+  h += '<div class="btns"><button type="button" onclick="dsNow()">' + t('date.now') + '</button><button type="button" class="pri" onclick="dsOk()">' + t('date.ok') + '</button></div>';
+  $('dsBody').innerHTML = icons(h);
+}
+function dsPick(k) { DS.sel = k; var p = k.split('-'); DS.y = Number(p[0]); DS.m = Number(p[1]); dsRender(); }
+function dsMon(n) { DS.m += n; if (DS.m < 1) { DS.m = 12; DS.y--; } if (DS.m > 12) { DS.m = 1; DS.y++; } dsRender(); }
+function dsT(k, v) { DS[k] = String(v).replace(/\D/g, '').slice(0, 2); }
+function dsClose() { var a = document.activeElement; if (a && a.blur) a.blur(); sheetClose('dsheet'); }
+function dsNow() { whenSet(''); dsClose(); }
+function dsOk() {
+  var hh = Number(DS.hh), mm = Number(DS.mm);
+  if (DS.hh === '' || DS.mm === '' || !(hh >= 0 && hh <= 23) || !(mm >= 0 && mm <= 59)) { toast(t('date.badTime')); return; }
+  var v = DS.sel + 'T' + (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+  if (whenMs(v) - Date.now() > 60000) { toast(t('date.future')); return; }
+  whenSet(v); dsClose();
+}
+window.dsPick = dsPick; window.dsMon = dsMon; window.dsT = dsT; window.dsNow = dsNow; window.dsOk = dsOk;
+$('cwhen').onclick = dsOpen; $('dsClose').onclick = dsClose; $('dsbg').onclick = dsClose;
+
 function suggestBlock(d) {
   if (!d.suggest || !d.suggest.length) return '';
   var h = '<section class="card"><h2>' + t('suggest.title') + '</h2>';
@@ -718,7 +870,7 @@ function suggestBlock(d) {
 
 function incomeBlock(d) {
   var n = d.income;
-  var h = '<section class="card"><div class="lab">' + t('income.label') + '</div><div class="big">' + money(n.total) + '<span>' + t('unit.baht') + '</span></div><div class="split">';
+  var h = '<section class="card tap inhero" role="button" tabindex="0" onclick="openOv(\'in\')" aria-label="' + esc(t('ov.open')) + '"><i class="ic ic-next go"></i><div class="lab">' + t('income.label') + '</div><div class="big">' + money(n.total) + '<span>' + t('unit.baht') + '</span></div><div class="split">';
   h += '<div class="mini n"><div class="lab">' + t('income.account') + '</div><div class="num">' + money(n.account) + '</div><div class="sub">' + t('income.count', { n: n.accountCount }) + '</div></div>';
   h += '<div class="mini n"><div class="lab">' + t('income.cash') + '</div><div class="num">' + money(n.cash) + '</div><div class="sub">' + t('income.count', { n: n.cashCount }) + '</div></div>';
   h += '<div class="mini k"><div class="lab">' + t('income.card') + '</div><div class="num">' + money(n.card) + '</div>';
@@ -842,17 +994,25 @@ function accRow(a, i) {
     + '<span class="acm"><span class="acx">x-' + esc(a.last4) + '</span><span class="pill' + (credit ? ' c' : ' t') + '">' + esc(kindLabel(a.kind)) + '</span></span></span>';
   h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'edit\')" aria-label="' + esc(t('acc.edit')) + '"><i class="ic ic-edit"></i></button>';
   h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'del\')" aria-label="' + esc(t('mg.delete')) + '"><i class="ic ic-delete"></i></button></div>';
-  if (!acc || acc.i !== i) return h;
-  h += '<div class="mgp xpanel' + xpc('acc') + '">';
+  return h;
+}
+
+/** sheet แก้ไข/ลบบัญชี คืน [หัวเรื่อง, html] */
+function accSheet() {
+  var a = acc.a;
   if (acc.mode === 'edit') {
-    h += accInput('acName', t('acc.namePh'), 'maxlength="30"', a.name);
-    h += accInput('acNum', t('acc.newNum', { last4: a.last4 }), 'inputmode="numeric"', '');
-    h += '<div class="btns"><button class="pri' + sbCls('acc') + '"' + dis + ' onclick="accSave()">' + t('mg.save') + '</button><button' + dis + ' onclick="accCancel()">' + t('mg.cancel') + '</button></div>';
-  } else {
-    h += '<div class="txt">' + te('acc.delAsk', { name: (a.name || kindLabel(a.kind)) + ' x-' + a.last4 }) + '</div>';
-    h += '<div class="btns"><button class="dng' + sbCls('acc') + '"' + dis + ' onclick="accDel()">' + t('mg.delGo') + '</button><button' + dis + ' onclick="accCancel()">' + t('mg.cancel') + '</button></div>';
+    return [t('acc.editTitle'), fld(t('acc.name'), accInput('acName', t('acc.namePh'), 'maxlength="30"', a.name))
+      + fld(t('acc.newNumLab'), accInput('acNum', t('acc.newNum', { last4: a.last4 }), 'inputmode="numeric"', '') + '<div class="sub hint">' + t('acc.newNumHint') + '</div>')
+      + btns('pri', 'accSave', t('mg.save'), 'acc')];
   }
-  return h + '</div>';
+  return [t('acc.delTitle'), '<div class="txt">' + te('acc.delAsk', { name: (a.name || kindLabel(a.kind)) + ' x-' + a.last4 }) + '</div>' + btns('dng', 'accDel', t('mg.delGo'), 'acc')];
+}
+function accAddSheet() {
+  var credit = accKind === 'credit';
+  return [t('acc.addLong'), fld(t('acc.kind'), '<select id="acKind" data-title="' + esc(t('acc.kind')) + '" onchange="accKindSet(this.value)">' + opt('credit', t('acc.credit'), accKind) + opt('bank', t('acc.bank'), accKind) + '</select>')
+    + fld(t(credit ? 'acc.numCredit' : 'acc.numBank'), accInput('acNewNum', t(credit ? 'acc.numCreditPh' : 'acc.numBankPh'), 'inputmode="numeric"', '') + '<div class="sub hint">' + t('acc.numHint') + '</div>')
+    + fld(t('acc.name'), accInput('acNewName', t('acc.namePh'), 'maxlength="30"', ''))
+    + btns('pri', 'accAdd', t('mg.save'), 'accadd')];
 }
 
 function accInner(d) {
@@ -860,17 +1020,7 @@ function accInner(d) {
   var h = '<h2>' + t('acc.title') + '</h2><div class="sub">' + t('acc.hint') + '</div>';
   if (!list.length) h += '<div class="sub acempty">' + t('acc.empty') + '</div>';
   list.forEach(function (a, i) { h += accRow(a, i); });
-  if (!accAdding) {
-    h += '<button type="button" class="addlong"' + dis + ' onclick="accAddOpen()"><i class="ic ic-add"></i>' + t('acc.addLong') + '</button>';
-  } else {
-    var credit = accKind === 'credit';
-    h += '<div class="mgp xpanel accform' + xpc('accadd') + '"><div class="lab">' + t('acc.addLong') + '</div>';
-    h += accInput('acNewName', t('acc.namePh'), 'maxlength="30"', '');
-    h += '<select id="acKind" data-title="' + esc(t('acc.kind')) + '" onchange="accKindSet(this.value)">' + opt('credit', t('acc.credit'), accKind) + opt('bank', t('acc.bank'), accKind) + '</select>';
-    h += accInput('acNewNum', t(credit ? 'acc.numCredit' : 'acc.numBank'), 'inputmode="numeric"', '');
-    h += '<div class="sub" style="margin-top:6px">' + t('acc.numHint') + '</div>';
-    h += '<div class="btns"><button class="pri' + sbCls('accadd') + '"' + dis + ' onclick="accAdd()">' + t('mg.save') + '</button><button' + dis + ' onclick="accAddClose()">' + t('mg.cancel') + '</button></div></div>';
-  }
+  h += '<button type="button" class="addlong"' + dis + ' onclick="accAddOpen()"><i class="ic ic-add"></i>' + t('acc.addLong') + '</button>';
   return h;
 }
 
@@ -878,18 +1028,19 @@ function renderAcc() {
   var b = $('accbox');
   if (!b || !DATA) return;
   b.innerHTML = icons(accInner(DATA));
-  if (xpNext === 'acc' || xpNext === 'accadd') xpNext = '';
   enhance(b); flashIn(b);
+  if (FS === 'acc' || FS === 'accadd') renderFs();
 }
 
-/** เรียก API ของส่วนบัญชี: ปุ่มหมุน → ✓ → แผงหุบ แล้วแถวที่เพิ่ม/แก้กะพริบ; พลาด = toast แผงค้างไว้ */
+/** เรียก API ของส่วนบัญชี: ปุ่มหมุน → ✓ → ปิด sheet แล้วแถวที่เพิ่ม/แก้กะพริบ; พลาด = toast sheet ค้างไว้ */
 function accRun(id, name, args, k) {
   SB[id] = 'busy'; renderAcc();
   api(name, args).then(function () {
     SB[id] = 'done'; buzz(); renderAcc();
     setTimeout(function () {
-      collapseThen(function () {
-        delete SB[id]; acc = null; accAdding = false; accDraft = {};
+      delete SB[id];
+      fsHide(function () {
+        acc = null; accAdding = false; accDraft = {};
         if (k) flashK = k;
         renderAcc(); load();
       });
@@ -904,23 +1055,21 @@ function dayOk(v) { var n = Number(v); return n >= 1 && n <= 31 && Math.floor(n)
 /** เลข 4 หลักที่ฝั่งชีตจะเก็บ (ตรงกับ accDigits_ ใน Code.gs) ใช้หาแถวที่จะกะพริบ */
 function last4Of(kind, num) { var dg = String(num || '').replace(/\D/g, ''); return kind === 'bank' && dg.length === 10 ? dg.slice(5, 9) : dg.slice(-4); }
 function accOpen(i, mode) {
-  acc = { i: i, mode: mode }; accAdding = false; accDraft = {}; xpNext = 'acc';
-  renderAcc();
-  var el = $('acName'); if (el) el.focus();
+  acc = { i: i, a: DATA.accounts[i], mode: mode }; accAdding = false; accDraft = {};
+  fsShow('acc');
 }
-function accCancel() { collapseThen(function () { acc = null; accDraft = {}; renderAcc(); }); }
+function accCancel() { fsHide(function () { acc = null; accDraft = {}; }); }
 function accAddOpen() {
-  acc = null; accAdding = true; accDraft = {}; xpNext = 'accadd';
-  renderAcc();
-  var el = $('acNewName'); if (el) el.focus();
+  acc = null; accAdding = true; accDraft = {};
+  fsShow('accadd');
 }
-function accAddClose() { collapseThen(function () { accAdding = false; accDraft = {}; renderAcc(); }); }
-function accKindSet(k) { accKind = k === 'bank' ? 'bank' : 'credit'; renderAcc(); }
+function accAddClose() { fsHide(function () { accAdding = false; accDraft = {}; }); }
+function accKindSet(k) { accKind = k === 'bank' ? 'bank' : 'credit'; renderFs(); }
 function accSave() {
-  var a = DATA.accounts[acc.i], num = val('acNum');
+  var a = acc.a, num = val('acNum');
   accRun('acc', 'updateAccount', [a.row, a.last4, { name: val('acName'), number: num }], 'a:' + a.kind + ':' + (num ? last4Of(a.kind, num) : a.last4));
 }
-function accDel() { var a = DATA.accounts[acc.i]; accRun('acc', 'deleteAccount', [a.row, a.last4], ''); }
+function accDel() { var a = acc.a; accRun('acc', 'deleteAccount', [a.row, a.last4], ''); }
 function accAdd() {
   var p = { kind: accKind, name: val('acNewName'), number: val('acNewNum') };
   accRun('accadd', 'addAccount', [p], 'a:' + p.kind + ':' + last4Of(p.kind, p.number));
@@ -952,6 +1101,205 @@ function cySave() {
 }
 window.cySave = cySave;
 
+/* ---------- หน้าภาพรวม: เน้นเห็นยอดใช้จ่ายเทียบรอบก่อน (ไม่ซ้ำการ์ดหน้าแรก)
+ * รอบนี้ = กราฟยอดสะสมเทียบรอบก่อน ณ วันเดียวกัน (บน) + แท่งยอดรายวัน (ล่าง) ใช้แกนวันร่วมกัน คนละแกนยอด
+ * รายเดือน = แท่งยอดต่อรอบ ย้อนหลัง 6 รอบ  กรองตามประเภทและหมวดหมู่ได้ ---------- */
+
+var OV = { offset: 0, data: null, tab: 'out', mode: 'day', type: '', cat: '', sel: -1, selM: 5, m: null };
+var DAY = 86400000;
+var fMon = new Intl.DateTimeFormat('th-TH', { month: 'short', timeZone: BK });
+
+function openOv(tb) {
+  OV.tab = tb === 'in' ? 'in' : 'out'; OV.offset = offset; OV.data = null; OV.type = ''; OV.cat = ''; OV.sel = -1; OV.selM = 5;
+  openSub('ov'); renderOv(); loadOv();
+}
+function loadOv(fresh) {
+  var off = OV.offset;
+  api('overviewData', [off, fresh === true ? 1 : 0]).then(function (d) {
+    if (view !== 'ov' || off !== OV.offset) return;
+    OV.data = d; renderOv();
+  }, function (e) {
+    if (!guard(e) && view === 'ov') $('ovapp').innerHTML = '<div class="err">' + esc(t('load.fail', { e: errMsg(e) })) + '</div>';
+  });
+}
+function ovTab(tb) { if (OV.tab === tb) return; OV.tab = tb; OV.type = ''; OV.cat = ''; OV.sel = -1; renderOv(); }
+function ovMode(m) { OV.mode = m; OV.sel = -1; OV.selM = 5; renderOv(); }
+function ovType(v) { OV.type = v; renderOv(); }
+function ovCat(v) { OV.cat = v; renderOv(); }
+function ovCyc(n) { var o = OV.offset + n; if (o > 0) return; OV.offset = o; OV.data = null; OV.sel = -1; OV.selM = 5; renderOv(); loadOv(); }
+window.openOv = openOv; window.ovMode = ovMode; window.ovType = ovType; window.ovCat = ovCat;
+
+/** แถวที่ผ่านตัวกรอง คืน [รอบ, วัน, ยอด] */
+function ovRows() {
+  var d = OV.data;
+  if (OV.tab === 'out') return d.ex.filter(function (r) { return (!OV.type || r[2] === OV.type) && (!OV.cat || r[3] === OV.cat); }).map(function (r) { return [r[0], r[1], r[4]]; });
+  return d.inc.filter(function (r) { return !OV.type || r[2] === OV.type; }).map(function (r) { return [r[0], r[1], r[3]]; });
+}
+function cycLen(c) { return Math.max(1, Math.round((c.end - c.start) / DAY)); }
+function ovDaily(rows, ci) {
+  var n = cycLen(OV.data.cycles[ci]), a = [], i;
+  for (i = 0; i < n; i++) a.push(0);
+  rows.forEach(function (r) { if (r[0] === ci && r[1] >= 0 && r[1] < n) a[r[1]] += r[2]; });
+  return a;
+}
+function cumOf(a) { var s = 0; return a.map(function (v) { s += v; return s; }); }
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), f = v / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+}
+function shortMoney(n) {
+  var a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (a >= 1e4) return Math.round(n / 1e3) + 'k';
+  if (a >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
+  return money(n);
+}
+function dayLabel(c, i) { return fDay.format(new Date(c.start + i * DAY + DAY / 2)); }
+/** ข้อความเทียบ: เป้าคือเตือนสติ จ่ายมากกว่ารอบก่อน = ป้ายสีเตือน */
+function cmpPill(v, base) {
+  if (!(base > 0)) return '';
+  var p = Math.round(Math.abs(v - base) / base * 100);
+  if (!p) return '<span class="pill">' + t('ov.same') + '</span>';
+  var up = v > base, warn = up === (OV.tab === 'out');
+  return '<span class="pill' + (warn ? ' up' : ' dn') + '">' + (up ? '▲ ' : '▼ ') + t(up ? 'ov.more' : 'ov.less', { p: p }) + '</span>';
+}
+
+function ovTypeOpts() {
+  var o = OV.tab === 'out' ? [['c', 'ov.tCredit'], ['t', 'ov.tTransfer'], ['k', 'ov.tCash']] : [['a', 'ov.tAccount'], ['k', 'ov.tCashIn'], ['c', 'ov.tCard']];
+  return o.reduce(function (h, x) { return h + opt(x[0], t(x[1]), OV.type); }, opt('', t('ov.allType'), OV.type));
+}
+function ovCatOpts() {
+  var names = OV.data.tags.slice();
+  OV.data.ex.forEach(function (r) { if (names.indexOf(r[3]) < 0) names.push(r[3]); });
+  return names.reduce(function (h, n) { return h + opt(n, n === UNTAG ? t('tag.untagged') : n, OV.cat); }, opt('', t('ov.allCat'), OV.cat));
+}
+
+function renderOv() {
+  $('ovOut').className = OV.tab === 'out' ? 'on' : ''; $('ovIn').className = OV.tab === 'in' ? 'on' : '';
+  $('ovnext').disabled = OV.offset >= 0;
+  var d = OV.data;
+  if (!d) {
+    $('ovcyc').innerHTML = '&nbsp;'; $('ovupd').innerHTML = '&nbsp;';
+    $('ovapp').innerHTML = '<div class="skel"><i class="sk"></i><i class="sk h"></i></div>';
+    return;
+  }
+  var c = d.cycles[d.cycles.length - 1];
+  $('ovcyc').textContent = range(c.start, c.end) + (OV.offset === 0 ? t('top.current') : '');
+  $('ovupd').textContent = t('top.updated', { time: fT.format(new Date(d.now)) });
+  var h = '<section class="card ovctl"><div class="seg"><button type="button" class="' + (OV.mode === 'day' ? 'on' : '') + '" onclick="ovMode(\'day\')">' + t('ov.day') + '</button>'
+    + '<button type="button" class="' + (OV.mode === 'month' ? 'on' : '') + '" onclick="ovMode(\'month\')">' + t('ov.month') + '</button></div>'
+    + '<div class="ovf' + (OV.tab === 'out' ? '' : ' one') + '">' + fld(t('ov.type'), '<select data-title="' + esc(t('ov.type')) + '" onchange="ovType(this.value)">' + ovTypeOpts() + '</select>')
+    + (OV.tab === 'out' ? fld(t('ov.cat'), '<select data-title="' + esc(t('ov.cat')) + '" onchange="ovCat(this.value)">' + ovCatOpts() + '</select>') : '') + '</div></section>';
+  h += '<section class="card">' + (OV.mode === 'day' ? ovDayHead() : ovMonthHead()) + '<div id="ovchart" class="ovchart"></div><div id="ovinfo" class="sub ovinfo"></div></section>';
+  $('ovapp').innerHTML = icons(h);
+  enhance($('ovapp'));
+  ovDraw();
+  var el = $('ovchart');
+  el.onpointerdown = el.onpointermove = function (ev) {
+    if (ev.type === 'pointermove' && !ev.buttons && ev.pointerType !== 'mouse') return;
+    var r = el.getBoundingClientRect(), m = OV.m;
+    if (!m || !r.width) return;
+    var i = Math.max(0, Math.min(m.n - 1, Math.floor((ev.clientX - r.left) / r.width * m.n)));
+    if (OV.mode === 'day') { if (i === OV.sel) return; OV.sel = i; } else { if (i === OV.selM) return; OV.selM = i; }
+    ovDraw();
+  };
+}
+
+/* ----- รอบนี้ (รายวัน) ----- */
+function ovDayHead() {
+  var d = OV.data, rows = ovRows(), L = d.cycles.length;
+  var cur = ovDaily(rows, L - 1), prv = ovDaily(rows, L - 2), cc = cumOf(cur), pc = cumOf(prv), n = cur.length;
+  var c = d.cycles[L - 1], ti = d.now < c.end ? Math.max(0, Math.min(n - 1, Math.floor((d.now - c.start) / DAY))) : n - 1;
+  var v = cc[ti], base = pc.length ? pc[Math.min(ti, pc.length - 1)] : 0;
+  OV.m = { n: n, cur: cur, cc: cc, pc: pc, ti: ti, c: c };
+  var h = '<div class="lab">' + t(OV.tab === 'out' ? 'ov.spent' : 'ov.got') + '</div><div class="big ovbig">' + money(v) + '<span>' + t('unit.baht') + '</span></div>';
+  h += '<div class="ovcmp sub">' + (base > 0 ? t('ov.vsPrev', { n: money(base) }) + ' ' + cmpPill(v, base) : t('ov.noPrev')) + '</div>';
+  if (!rows.length) h += '<div class="sub mt">' + t('ov.empty') + '</div>';
+  return h + '<div class="lg' + (OV.tab === 'in' ? ' inlg' : '') + '"><span><i class="lgl s1"></i>' + t('ov.cur') + '</span><span><i class="lgl s2"></i>' + t('ov.prev') + '</span></div>';
+}
+function ovDraw() {
+  if (!OV.m || !$('ovchart')) return;
+  if (OV.mode === 'day') ovDrawDay(); else ovDrawMonth();
+}
+function svgW() { var w = $('ovchart').clientWidth; return w > 100 ? w : 320; }
+function ovDrawDay() {
+  var m = OV.m, n = m.n, W = svgW(), H1 = 132, G = 26, H2 = 64, XL = 18, top = 4, H = top + H1 + G + H2 + XL;
+  var sel = OV.sel >= 0 && OV.sel < n ? OV.sel : m.ti, step = W / n;
+  var cx = function (i) { return (i + 0.5) * step; };
+  var mx1 = 0, i;
+  for (i = 0; i <= m.ti; i++) mx1 = Math.max(mx1, m.cc[i]);
+  for (i = 0; i < Math.min(n, m.pc.length); i++) mx1 = Math.max(mx1, m.pc[i]);
+  mx1 = niceMax(mx1 * 1.05);
+  var y1 = function (v) { return top + H1 - Math.max(0, v) / mx1 * (H1 - 8); };
+  var b2 = top + H1 + G + H2, mx2 = niceMax(Math.max.apply(null, m.cur.slice(0, m.ti + 1).concat([1])));
+  var s = '<svg class="ovs' + (OV.tab === 'in' ? ' in' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="' + esc(t('ov.cum')) + '">';
+  [mx1, mx1 / 2].forEach(function (g) {
+    s += '<line class="gr" x1="0" x2="' + W + '" y1="' + y1(g).toFixed(1) + '" y2="' + y1(g).toFixed(1) + '"/><text class="tx" x="0" y="' + (y1(g) - 4).toFixed(1) + '">' + shortMoney(g) + '</text>';
+  });
+  s += '<line class="ax" x1="0" x2="' + W + '" y1="' + y1(0) + '" y2="' + y1(0) + '"/>';
+  s += '<line class="xh" x1="' + cx(sel).toFixed(1) + '" x2="' + cx(sel).toFixed(1) + '" y1="' + top + '" y2="' + b2 + '"/>';
+  var pts = function (a, k) { var p = []; for (var j = 0; j < Math.min(k, a.length); j++) p.push(cx(j).toFixed(1) + ',' + y1(a[j]).toFixed(1)); return p.join(' '); };
+  s += '<polyline class="s2" points="' + pts(m.pc, n) + '"/><polyline class="s1" points="' + pts(m.cc, m.ti + 1) + '"/>';
+  if (sel < m.pc.length) s += '<circle class="d2" cx="' + cx(sel).toFixed(1) + '" cy="' + y1(m.pc[sel]).toFixed(1) + '" r="4"/>';
+  if (sel <= m.ti) s += '<circle class="d1" cx="' + cx(sel).toFixed(1) + '" cy="' + y1(m.cc[sel]).toFixed(1) + '" r="5"/>';
+  s += '<text class="tx" x="0" y="' + (top + H1 + G - 6) + '">' + t('ov.daily') + ' · ' + shortMoney(mx2) + '</text>';
+  var bw = Math.max(2, step - 2), r = Math.min(3, bw / 2);
+  for (i = 0; i <= m.ti; i++) {
+    var v = Math.max(0, m.cur[i]); if (!v) continue;
+    var bh = Math.max(r + 1, v / mx2 * (H2 - 2)), x = i * step + (step - bw) / 2;
+    s += '<path class="b1' + (i === sel ? '' : ' dim') + '" d="M' + x.toFixed(1) + ',' + b2 + 'v' + (-(bh - r)).toFixed(1) + 'q0,' + (-r) + ' ' + r + ',' + (-r) + 'h' + (bw - 2 * r).toFixed(1) + 'q' + r + ',0 ' + r + ',' + r + 'v' + (bh - r).toFixed(1) + 'z"/>';
+  }
+  s += '<line class="ax" x1="0" x2="' + W + '" y1="' + b2 + '" y2="' + b2 + '"/>';
+  [[0, 'start'], [Math.floor((n - 1) / 2), 'middle'], [n - 1, 'end']].forEach(function (p) {
+    s += '<text class="tx" text-anchor="' + p[1] + '" x="' + (p[1] === 'start' ? 0 : p[1] === 'end' ? W : cx(p[0])).toFixed(1) + '" y="' + (H - 3) + '">' + esc(dayLabel(m.c, p[0])) + '</text>';
+  });
+  $('ovchart').innerHTML = s + '</svg>';
+  $('ovinfo').textContent = sel > m.ti ? t('ov.future', { day: dayLabel(m.c, sel) })
+    : t('ov.dayInfo', { day: dayLabel(m.c, sel), v: money(m.cur[sel]), cum: money(m.cc[sel]) }) + (sel < m.pc.length ? t('ov.dayInfoPrev', { cum: money(m.pc[sel]) }) : '');
+}
+
+/* ----- รายเดือน (ตามรอบ) ----- */
+function ovMonthHead() {
+  var d = OV.data, rows = ovRows(), L = d.cycles.length, tot = [], i;
+  for (i = 0; i < L; i++) tot.push(0);
+  rows.forEach(function (r) { tot[r[0]] += r[2]; });
+  var prior = tot.slice(0, L - 1).filter(function (v) { return v > 0; });
+  var avg = prior.length ? prior.reduce(function (a, b) { return a + b; }, 0) / prior.length : 0, v = tot[L - 1];
+  OV.m = { n: L, tot: tot };
+  var h = '<div class="lab">' + t(OV.tab === 'out' ? 'ov.spent' : 'ov.got') + '</div><div class="big ovbig">' + money(v) + '<span>' + t('unit.baht') + '</span></div>';
+  var pill = OV.offset === 0 ? '<span class="pill">' + t(OV.tab === 'out' ? 'ov.ofAvg' : 'ov.ofAvgIn', { p: Math.round(v / avg * 100) }) + '</span>' : cmpPill(v, avg);   // รอบนี้ยังไม่จบ: บอกเป็นสัดส่วนของค่าเฉลี่ยแทนมาก/น้อยกว่า
+  h += '<div class="ovcmp sub">' + (avg > 0 ? t('ov.avg', { n: money(avg) }) + ' ' + pill : t('ov.noPrev')) + '</div>';
+  if (!rows.length) h += '<div class="sub mt">' + t('ov.empty') + '</div>';
+  return h;
+}
+function ovDrawMonth() {
+  var m = OV.m, d = OV.data, n = m.n, W = svgW(), H1 = 150, top = 18, XL = 20, H = top + H1 + XL, step = W / n;
+  var mx = niceMax(Math.max.apply(null, m.tot.concat([1]))), b = top + H1, bw = Math.min(40, step * 0.62), r = 4, sel = OV.selM;
+  var s = '<svg class="ovs' + (OV.tab === 'in' ? ' in' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="' + esc(t('ov.month')) + '">';
+  m.tot.forEach(function (v, i) {
+    var x = i * step + (step - bw) / 2, c = d.cycles[i];
+    if (v > 0) {
+      var bh = Math.max(r + 1, v / mx * (H1 - 4));
+      s += '<path class="b1' + (i === sel ? '' : ' dim') + '" d="M' + x.toFixed(1) + ',' + b + 'v' + (-(bh - r)).toFixed(1) + 'q0,-' + r + ' ' + r + ',-' + r + 'h' + (bw - 2 * r).toFixed(1) + 'q' + r + ',0 ' + r + ',' + r + 'v' + (bh - r).toFixed(1) + 'z"/>';
+      s += '<text class="tv' + (i === sel ? ' on' : '') + '" text-anchor="middle" x="' + (x + bw / 2).toFixed(1) + '" y="' + (b - bh - 5).toFixed(1) + '">' + shortMoney(v) + '</text>';
+    }
+    s += '<text class="tx' + (i === sel ? ' on' : '') + '" text-anchor="middle" x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 4) + '">' + esc(fMon.format(new Date(c.end - DAY))) + '</text>';
+  });
+  s += '<line class="ax" x1="0" x2="' + W + '" y1="' + b + '" y2="' + b + '"/>';
+  $('ovchart').innerHTML = s + '</svg>';
+  var c = d.cycles[sel];
+  $('ovinfo').textContent = t('ov.cycInfo', { range: range(c.start, c.end), v: money(m.tot[sel]) });
+}
+
+$('ovback').onclick = closeSub;
+$('ovOut').onclick = function () { ovTab('out'); };
+$('ovIn').onclick = function () { ovTab('in'); };
+$('ovprev').onclick = function () { ovCyc(-1); };
+$('ovnext').onclick = function () { ovCyc(1); };
+window.addEventListener('resize', function () { if (view === 'ov' && OV.data) ovDraw(); });
+
+
 /* แทนอีโมจิในข้อความด้วยไอคอนจาก icons/ (Phosphor Thin, MIT) */
 function icons(h) {
   return h.replace(/💳/g, '<i class="ic ic-credit"></i>').replace(/🏦/g, '<i class="ic ic-transfer"></i>').replace(/💵/g, '<i class="ic ic-cash"></i>').replace(/&#8627; |↳ /g, '<i class="ic ic-sub"></i> ');
@@ -976,7 +1324,7 @@ function totalBar(d) {
 
 function render() {
   var d = DATA, c = d.credit, tr = d.transfer;
-  mg = null; mgErr = '';
+  if (!FS) { mg = null; mgErr = ''; }
   $('cyc').textContent = fDay.format(new Date(d.cycle.start)) + ' – ' + fDay.format(new Date(d.cycle.end - 86400000)) + (offset === 0 ? t('top.current') : '');
   $('upd').textContent = t('top.updated', { time: fT.format(new Date(d.now)) });
   $('next').disabled = offset >= 0;
@@ -986,7 +1334,7 @@ function render() {
   var h = '';
   if (tab === 'out') {
     h += unBar(d) + suggestBlock(d) + '<div id="topslot"></div>';
-    h += '<div class="toprow"><section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big"><b data-n="' + Number(d.total.total) + '">' + money(d.total.total) + '</b><span>' + t('unit.baht') + '</span></div>';
+    h += '<div class="toprow"><section class="card hero tap" role="button" tabindex="0" onclick="openOv(\'out\')" aria-label="' + esc(t('ov.open')) + '"><i class="ic ic-next go"></i><div class="lab">' + t('total.label') + '</div><div class="big"><b data-n="' + Number(d.total.total) + '">' + money(d.total.total) + '</b><span>' + t('unit.baht') + '</span></div>';
     h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div>' + totalBar(d) + '</section>' + cashTile(d) + '</div><div class="split">';
     h += streamCard('c', t('card.credit'), c, 'credit') + streamCard('t', t('card.transfer'), tr, 'transfer') + '</div>';
     if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
@@ -1012,9 +1360,10 @@ function applyStrings() {
   Array.prototype.forEach.call(document.querySelectorAll('[data-aria]'), function (el) { el.setAttribute('aria-label', t(el.getAttribute('data-aria'))); });
 }
 
-function busy() { if (mg || acc || accAdding || sbAny() || !$('picker').hidden || !$('sheet').hidden) return true; var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
+function busy() { if (FS || sbAny() || !$('picker').hidden || !$('sheet').hidden || !$('dsheet').hidden) return true; var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
 
 applyStrings();
+whenSet('');
 $('prev').onclick = function () { offset--; animMain = true; load(); };
 $('next').onclick = function () { if (offset < 0) { offset++; animMain = true; load(); } };
 $('rf').onclick = function () { load(true); };   // ปุ่มรีเฟรชข้ามแคชฝั่งเซิร์ฟเวอร์
@@ -1028,6 +1377,7 @@ function tick() {
   if (document.hidden || busy()) return;
   if (view === 'main' && !$('main').hidden) load();
   else if (view === 'stream') loadStream();
+  else if (view === 'ov') loadOv();
 }
 document.addEventListener('visibilitychange', tick);
 setInterval(tick, 60000);

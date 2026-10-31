@@ -320,3 +320,99 @@ html[data-nav="back"]::view-transition-old(root){animation-name:vout-r}
   *,*::before,*::after,::view-transition-old(root),::view-transition-new(root){animation:none!important;transition:none!important}
   .sb-busy::after{animation:sp 1.2s linear infinite!important}
 }
+
+/* ---------- รอบ sheet ฟอร์ม / แท็ก / ภาพรวม (2026-10-31) ---------- */
+
+.ic-x{--i:url(../icons/x.svg)}.ic-calendar{--i:url(../icons/calendar.svg)}
+
+/* sheet ยกขึ้นเหนือคีย์บอร์ด และไม่สูงเกินพื้นที่ที่มองเห็น */
+.sheetbox{bottom:var(--kb,0px);max-height:calc(var(--vvh,100vh) - 24px)}
+.sheetbox .chead{margin:-4px -4px 12px 0}
+.xbtn{width:44px;height:44px;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:0;background:var(--pill);color:var(--ink);padding:0}
+.xbtn .ic{width:20px;height:20px}
+.sheetbox h2{font-size:13px}
+
+/* ช่องในฟอร์ม sheet: ชื่อช่องอยู่บน */
+.fld{margin-top:12px}
+.fld:first-child{margin-top:0}
+.fld .lab{margin:0 0 6px 4px}
+.fsbody input,#dsBody input,.ovf input{width:100%;height:46px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:16px}
+.fsbody .selbtn,#dsBody .selbtn,.ovf .selbtn{height:46px;font-size:16px}
+.fsbody .txt{font-size:15px;line-height:1.55}
+.fsbody .warnb{margin-top:10px}
+.mt{margin-top:8px}
+.hint{margin:6px 0 0 4px;font-size:12px}
+.btns{display:flex;gap:8px;margin-top:18px}
+.fsbody .btns button,#dsBody .btns button{flex:1 1 0;min-width:0;height:48px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-weight:500}
+.fsbody .btns .pri,#dsBody .btns .pri{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:600}
+.fsbody .btns .dng{background:var(--warn);border-color:var(--warn);color:var(--warnink);font-weight:600}
+.fsbody .btns button:disabled{opacity:.4}
+.fsbody .err{margin-top:10px}
+
+/* ลูกศร/ไอคอนของปุ่มเลือก ไม่ชิดขอบ */
+.selbtn{padding:0 18px 0 16px}
+.selbtn .ic{width:16px;height:16px}
+
+/* ฟอร์มเงินสด */
+.cf input{height:46px;font-size:16px}
+.cf .whenbtn{height:46px;margin-top:8px;font-size:16px}
+.cf .whenbtn .ic{width:18px;height:18px}
+.cf .pri{height:48px;margin-top:14px}
+
+/* sheet วันเวลา */
+.dchips{margin-top:0}
+.dchips .chip{height:36px;padding:0 16px;font:inherit;font-size:14px;color:var(--ink)}
+.dchips .chip.on{background:var(--ink);color:var(--bg);font-weight:600}
+.calh{display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px}
+.calh b{font-weight:600}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}
+.calw{font-size:11px;color:var(--mute);padding:4px 0}
+.cald{height:40px;border:0;border-radius:999px;background:transparent;color:var(--ink);font:inherit;font-variant-numeric:tabular-nums}
+.cald.now{box-shadow:inset 0 0 0 1px var(--c)}
+.cald.on{background:var(--c);color:#fff;font-weight:600;box-shadow:none}
+.cald:disabled{opacity:.3}
+#dsBody .fld{margin-top:14px}
+.timef{display:flex;align-items:center;gap:8px}
+.timef input{flex:1;text-align:center;font-variant-numeric:tabular-nums}
+.timef b{color:var(--mute)}
+
+/* แท็กและบัญชี: ปุ่มเพิ่มแบบยาว */
+#mgbox .addlong{margin-top:14px}
+
+/* การ์ดที่แตะเข้าหน้าภาพรวม */
+.hero.tap,.inhero{position:relative}
+.hero .go{position:absolute;top:16px;right:14px;width:16px;height:16px;opacity:.8}
+.inhero .go{position:absolute;top:18px;right:16px;width:16px;height:16px;color:var(--mute)}
+
+/* หน้าภาพรวม */
+#ov .tabs{margin-top:14px}
+.ovctl .seg{margin-bottom:0}
+.ovctl .seg button{height:40px}
+.ovf{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.ovf.one{grid-template-columns:1fr}
+.ovf .fld{margin-top:0;min-width:0}
+.ovf .selbtn{height:42px;font-size:14px}
+.ovbig{font-size:clamp(30px,10vw,40px)}
+.ovcmp{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:2px}
+.pill.up{background:var(--warn);color:var(--warnink);font-weight:600}
+.pill.dn{background:var(--pill);color:var(--ink)}
+.lg{display:flex;gap:14px;margin-top:12px;font-size:12px;color:var(--mute)}
+.lg span{display:inline-flex;align-items:center;gap:6px}
+.lgl{display:inline-block;width:16px;height:0;border-top:2px solid var(--c)}
+.lgl.s2{border-top:2px dashed var(--mute)}
+.inlg .lgl{border-color:var(--t)}
+.ovchart{margin-top:8px;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.ovs{display:block;overflow:visible}
+.ovs .gr{stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
+.ovs .ax{stroke:var(--line);stroke-width:1}
+.ovs .xh{stroke:var(--mute);stroke-width:1;opacity:.5}
+.ovs .tx,.ovs .tv{fill:var(--mute);font-size:10px;font-family:inherit}
+.ovs .tv{font-size:11px;font-weight:600;fill:var(--mute)}
+.ovs .tv.on,.ovs .tx.on{fill:var(--ink)}
+.ovs polyline{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.ovs .s1{stroke:var(--c)}.ovs .s2{stroke:var(--mute);stroke-dasharray:4 4;opacity:.8}
+.ovs .d1{fill:var(--c);stroke:var(--card);stroke-width:2}.ovs .d2{fill:var(--mute);stroke:var(--card);stroke-width:2}
+.ovs .b1{fill:var(--c)}.ovs .b1.dim{opacity:.45}
+.ovs.in .s1{stroke:var(--t)}.ovs.in .d1,.ovs.in .b1{fill:var(--t)}
+.ovinfo{margin-top:10px;min-height:20px;font-variant-numeric:tabular-nums}
+@supports not (view-transition-name:none){#ov:not([hidden]){animation:vin-r .24s cubic-bezier(.2,.8,.2,1)}}

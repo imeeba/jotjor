@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="th"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="referrer" content="no-referrer">
 <title>Jotjor จดจ่อ</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap"></noscript>
 <script>try{var th=localStorage.getItem("jotjor_theme");if(th==="light"||th==="dark")document.documentElement.setAttribute("data-theme",th)}catch(e){}</script>
-<link rel="stylesheet" href="assets/style.css?v=16">
+<link rel="stylesheet" href="assets/style.css?v=17">
 </head>
 <body><div class="wrap">
 
@@ -46,12 +46,12 @@
   <div id="sheet" class="sheetwrap" hidden>
     <div id="sheetbg" class="sheetbg"></div>
     <section class="card sheetbox" id="cashbox">
-      <div class="chead"><h2 data-t="cash.add"></h2><button id="cashClose" class="mb" type="button" data-aria="cash.close">&times;</button></div>
+      <div class="chead"><h2 data-t="cash.add"></h2><button id="cashClose" class="xbtn" type="button" data-aria="cash.close"><i class="ic ic-x"></i></button></div>
       <div class="cf" id="cashform">
         <div class="seg"><button id="cout" class="on" type="button" data-t="cash.out"></button><button id="cin" type="button" data-t="cash.in"></button></div>
         <input id="camt" type="text" inputmode="decimal" data-ph="cash.amount" autocomplete="off">
         <input id="cmer" type="text" maxlength="40" data-ph="cash.merchant" autocomplete="off">
-        <input id="cwhen" type="datetime-local" data-aria="cash.when">
+        <button id="cwhen" class="selbtn whenbtn" type="button"></button>
         <button id="cgo" class="pri" type="button" data-t="cash.save"></button>
         <div id="cmsg" class="sub" style="margin-top:8px"></div>
       </div>
@@ -70,6 +70,17 @@
   <div id="stapp"></div>
 </section>
 
+<section id="ov" hidden>
+  <div class="sethead"><button id="ovback" class="backbtn" type="button" data-aria="settings.back"><i class="ic ic-back"></i></button><h1 data-t="ov.title"></h1></div>
+  <nav class="tabs"><button id="ovOut" class="on" type="button" data-t="tab.out"></button><button id="ovIn" type="button" data-t="tab.in"></button></nav>
+  <div class="capsule">
+    <button id="ovprev" type="button" data-aria="top.prev"><i class="ic ic-prev"></i></button>
+    <div class="mid"><div class="cl" id="ovcyc">&nbsp;</div><div class="sub" id="ovupd">&nbsp;</div></div>
+    <button id="ovnext" type="button" data-aria="top.next"><i class="ic ic-next"></i></button>
+  </div>
+  <div id="ovapp"></div>
+</section>
+
 <section id="settings" hidden>
   <div class="sethead"><button id="setback" class="backbtn" type="button" data-aria="settings.back"><i class="ic ic-back"></i></button><h1 data-t="settings.title"></h1><button id="themeBtn" class="themebtn" type="button"><i class="ic ic-monitor"></i></button></div>
   <section class="card setcard" id="cybox"></section>
@@ -86,6 +97,14 @@
     <button id="logout" class="dng" type="button" data-t="settings.logout"></button></section>
 </section>
 
+<div id="fsheet" class="sheetwrap" hidden>
+  <div class="sheetbg" id="fsbg"></div>
+  <section class="card sheetbox" role="dialog" aria-modal="true" aria-labelledby="fsTitle"><div class="chead"><h2 id="fsTitle"></h2><button id="fsClose" class="xbtn" type="button" data-aria="cash.close"><i class="ic ic-x"></i></button></div><div id="fsBody" class="fsbody"></div></section>
+</div>
+<div id="dsheet" class="sheetwrap" hidden>
+  <div class="sheetbg" id="dsbg"></div>
+  <section class="card sheetbox" role="dialog" aria-modal="true" aria-labelledby="dsTitle"><div class="chead"><h2 id="dsTitle" data-t="date.title"></h2><button id="dsClose" class="xbtn" type="button" data-aria="cash.close"><i class="ic ic-x"></i></button></div><div id="dsBody"></div></section>
+</div>
 <div id="picker" class="sheetwrap" hidden>
   <div class="sheetbg" id="pkbg"></div>
   <section class="card sheetbox pkbox" role="dialog" aria-modal="true" aria-labelledby="pkTitle"><i class="grab"></i><h2 id="pkTitle"></h2><div id="pkList" class="pklist"></div></section>
@@ -93,6 +112,6 @@
 <div id="toast" class="toast" role="alert" hidden></div>
 
 </div>
-<script src="assets/strings.js?v=16"></script>
-<script src="assets/app.js?v=16"></script>
+<script src="assets/strings.js?v=17"></script>
+<script src="assets/app.js?v=17"></script>
 </body></html>

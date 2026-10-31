@@ -749,6 +749,13 @@ function streamData(key, stream, offset, fresh) {
   return cached_('st_' + stream + '_' + offset, fresh, () => streamData_(stream, offset));
 }
 
+/** หน้าภาพรวม: 6 รอบที่จบที่ offset */
+function overviewData(key, offset, fresh) {
+  checkKey_(key);
+  offset = Number(offset) || 0;
+  return cached_('ov_' + offset, fresh, () => overviewData_(offset));
+}
+
 /** คืนผล fn() จากแคช (ชื่อผูกกับ dashVer_ ทุกการเขียนชีตจึงได้ค่าใหม่) */
 function cached_(name, fresh, fn) {
   const c = CacheService.getScriptCache();
@@ -792,7 +799,9 @@ const API_FNS = {
   streamData: function (k, a) { return streamData(k, a[0], a[1], a[2]); },
   addAccount: function (k, a) { return addAccount(k, a[0]); },
   updateAccount: function (k, a) { return updateAccount(k, a[0], a[1], a[2]); },
-  deleteAccount: function (k, a) { return deleteAccount(k, a[0], a[1]); }
+  deleteAccount: function (k, a) { return deleteAccount(k, a[0], a[1]); },
+  moveTag: function (k, a) { return moveTag(k, a[0], a[1], a[2]); },
+  overviewData: function (k, a) { return overviewData(k, a[0], a[1]); }
 };
 
 /** คืน object ถ้า body เป็น JSON ที่มี fn (และไม่มี secret ของ MacroDroid) ไม่งั้น null */
@@ -1285,6 +1294,56 @@ function streamData_(stream, offset) {
   };
 }
 
+/**
+ * หน้าภาพรวม: ยอดรายวันของ 6 รอบ (เก่าสุดก่อน รอบสุดท้าย = offset) คิดแบบเดียวกับ dashData_
+ * ex = [รอบ, วันที่ในรอบ (0 = วันแรก), ประเภท c|t|k, แท็กหลัก, ยอด]  inc = [รอบ, วัน, a|k|c, ยอด]
+ * ยอดรวมกันตาม key แล้ว หน้าเว็บกรองตามประเภท/หมวดเอง
+ */
+function overviewData_(offset) {
+  const now = new Date();
+  const N = 6, cycles = [];
+  for (let k = 0; k < N; k++) {
+    const b = cycleBounds_(now, offset - (N - 1) + k);
+    cycles.push({ start: b.start.getTime(), end: b.end.getTime() });
+  }
+  const rows = SpreadsheetApp.getActive().getSheetByName('Tx').getDataRange().getValues();
+  const mt = matches_();
+  const outTagByKey = {};
+  rows.forEach((r, i) => {
+    if (i && r[COL.type] === 'deposit' && r[COL.dir] === 'out' && r[COL.dt]) outTagByKey[txKey_(r)] = r[COL.tag] ? String(r[COL.tag]) : '';
+  });
+  const ex = {}, inc = {};
+  const add = (m, k, v) => { m[k] = (m[k] || 0) + v; };
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[COL.dt]) continue;
+    const at = new Date(r[COL.dt]).getTime();
+    if (at < cycles[0].start || at >= cycles[N - 1].end) continue;
+    let ci = 0;
+    while (ci < N - 1 && at >= cycles[ci].end) ci++;
+    const day = Math.floor((at - cycles[ci].start) / 86400000);
+    const type = r[COL.type], dir = r[COL.dir], amt = Number(r[COL.amount]) || 0;
+    const stream = type === 'credit' ? 'credit' : (type === 'deposit' ? 'transfer' : (type === 'cash' ? 'cash' : ''));
+    if (!stream) continue;
+    let tag = r[COL.tag] ? String(r[COL.tag]) : '';
+    let linked = false;
+    if (type === 'deposit' && dir === 'in') {
+      const ok = mt.link[txKey_(r)];
+      if (ok !== undefined && outTagByKey[ok] !== undefined) { linked = true; tag = outTagByKey[ok]; }
+    }
+    if (tag === SKIP_TAG) continue;
+    const s = stream === 'credit' ? 'c' : (stream === 'transfer' ? 't' : 'k');
+    if (dir === 'in' && !linked) add(inc, ci + '|' + day + '|' + (stream === 'transfer' ? 'a' : s), amt);
+    const v = linked ? -amt : spendVal_(stream, dir, amt);
+    if (v) add(ex, ci + '|' + day + '|' + s + '|' + (splitTag_(tag).main || UNTAGGED), v);
+  }
+  const unpack = m => Object.keys(m).map(k => {
+    const p = k.split('|');
+    return [Number(p[0]), Number(p[1])].concat(p.slice(2)).concat([round2_(m[k])]);
+  }).filter(x => Math.abs(x[x.length - 1]) >= 0.005);
+  return { now: now.getTime(), offset: offset, cycles: cycles, tags: tags_(), ex: unpack(ex), inc: unpack(inc) };
+}
+
 /* ---------- จัดการแท็กจาก Dashboard (เพิ่ม / เปลี่ยนชื่อ / ลบ) ---------- */
 
 /** ตรวจชื่อแท็ก: ไม่ว่าง, ไม่เกิน 20 ตัว, ห้ามมี , หรือ /, ห้ามเป็นชื่อพิเศษของระบบ คืนชื่อที่ตัดช่องว่างแล้ว */
@@ -1515,6 +1574,74 @@ function deleteTag(key, name, moveTo) {
     } else {
       subs[p.main].splice(subs[p.main].indexOf(p.sub), 1);
     }
+    writeTagTree_(mains, subs);
+    applyTagValidation_(ss);
+    return { ok: true, tx: tx, rules: ru };
+  });
+}
+
+/**
+ * ย้ายแท็ก: name = "เดท/พิม" หรือ "เดท", destMain = แท็กหลักปลายทาง ("" = ให้เป็นแท็กหลัก), newName = ชื่อใหม่ (ว่าง = ชื่อเดิม)
+ * แท็กรอง → แท็กหลัก หรือย้ายไปอยู่ใต้แท็กหลักอื่น
+ * แท็กหลัก → แท็กรองของ destMain: แท็กรองเดิมของมันย้ายตามไปอยู่ใต้ destMain ด้วย (ระดับเดียว)
+ * ชื่อซ้ำที่ปลายทาง = รวมเข้าด้วยกัน (หน้าเว็บแจ้งก่อนยืนยันแล้ว) แก้ทุกที่: Tags, Tx, Rules
+ */
+function moveTag(key, name, destMain, newName) {
+  checkKey_(key);
+  return withLock_(() => {
+    ensureMigrated_();
+    const ss = SpreadsheetApp.getActive();
+    const txSh = ss.getSheetByName('Tx'), ruSh = ss.getSheetByName('Rules');
+    const tree = tagTree_();
+    const mains = tree.mains.slice();
+    const subs = copySubs_(tree.subs);
+    const p = splitTag_(String(name || '').trim());
+    const dest = String(destMain == null ? '' : destMain).trim();
+    if (mains.indexOf(p.main) < 0) throw new Error('ไม่พบแท็กนี้');
+    if (p.sub && (!subs[p.main] || subs[p.main].indexOf(p.sub) < 0)) throw new Error('ไม่พบแท็กนี้');
+    if (dest && mains.indexOf(dest) < 0) throw new Error('ไม่พบแท็กปลายทาง');
+    const leaf = cleanTagName_(String(newName == null ? '' : newName).trim() || p.sub || p.main);
+    let f;
+    if (p.sub) {
+      const from = p.main + '/' + p.sub;
+      if (dest === p.main) throw new Error('อยู่ใต้แท็กนี้อยู่แล้ว');
+      subs[p.main].splice(subs[p.main].indexOf(p.sub), 1);
+      let to;
+      if (!dest) {                                        // แท็กรอง → แท็กหลัก
+        const hit = findName_(mains, leaf);
+        to = hit || leaf;
+        if (!hit) mains.splice(mains.indexOf(p.main) + 1, 0, leaf);
+      } else {                                            // ไปอยู่ใต้แท็กหลักอื่น
+        const list = subs[dest] || (subs[dest] = []);
+        const hit2 = findName_(list, leaf);
+        if (!hit2) list.push(leaf);
+        to = dest + '/' + (hit2 || leaf);
+      }
+      f = t => t === from ? to : t;
+    } else {                                              // แท็กหลัก → แท็กรองของ dest
+      if (!dest || dest === p.main) throw new Error('ต้องเลือกแท็กหลักปลายทาง');
+      const list = subs[dest] || (subs[dest] = []);
+      const own = (subs[p.main] || []).slice();
+      const hitSelf = findName_(list, leaf);
+      if (!hitSelf) list.push(leaf);
+      const self = dest + '/' + (hitSelf || leaf);
+      const subMap = {};
+      own.forEach(s => {
+        const ex = findName_(list, s);
+        if (!ex) list.push(s);
+        subMap[s] = dest + '/' + (ex || s);
+      });
+      mains.splice(mains.indexOf(p.main), 1);
+      delete subs[p.main];
+      f = t => {
+        if (t === p.main) return self;
+        if (t.indexOf(p.main + '/') !== 0) return t;
+        const s = t.slice(p.main.length + 1);
+        return subMap[s] || (dest + '/' + s);
+      };
+    }
+    const tx = retagColumn_(txSh, COL.tag + 1, f);
+    const ru = retagColumn_(ruSh, 2, f);
     writeTagTree_(mains, subs);
     applyTagValidation_(ss);
     return { ok: true, tx: tx, rules: ru };
