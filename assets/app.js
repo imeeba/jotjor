@@ -3,7 +3,7 @@
 (function () {
 'use strict';
 
-var APP_VER = 'build 21';   // ให้ตรงกับ ?v= ใน index.html
+var APP_VER = '0.9.0';   // SemVer หลัก.รอง.แก้ไข: ฟีเจอร์ใหม่ขึ้นตัวกลาง แก้บั๊กขึ้นตัวท้าย; 1.0.0 = เปิดเผยแพร่พร้อม tutorial
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey', LS_CACHE = 'jotjor_cache';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 

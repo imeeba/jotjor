@@ -117,8 +117,8 @@ window.STRINGS = {
   'subs.none': 'ไม่ระบุ',
 
   'recent.title': 'รายการล่าสุด',
-  'recent.titleDesc': 'รายการยอดสูงสุด',
-  'recent.titleAsc': 'รายการยอดต่ำสุด',
+  'recent.titleDesc': 'ยอดสูงสุด',
+  'recent.titleAsc': 'ยอดต่ำสุด',
   'recent.onlyUn': 'เฉพาะที่ยังไม่แท็ก ({n})',
   'recent.all': 'แสดงทั้งหมด',
   'recent.empty': 'ไม่มีรายการ',
