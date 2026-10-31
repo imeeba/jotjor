@@ -3,7 +3,7 @@
 (function () {
 'use strict';
 
-var APP_VER = 'build 20';   // ให้ตรงกับ ?v= ใน index.html
+var APP_VER = '0.9.0';   // SemVer หลัก.รอง.แก้ไข: ฟีเจอร์ใหม่ขึ้นตัวกลาง แก้บั๊กขึ้นตัวท้าย; 1.0.0 = เปิดเผยแพร่พร้อม tutorial
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey', LS_CACHE = 'jotjor_cache';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
@@ -872,6 +872,7 @@ function incomeBlock(d) {
 
 /* ----- เรียงรายการล่าสุด: new = ล่าสุด, desc = ยอดมากไปน้อย, asc = ยอดน้อยไปมาก (จำในเครื่อง ใช้ทั้งหน้าหลักและหน้าลงลึก) ----- */
 var RSORT = { new: 'sort.new', desc: 'sort.desc', asc: 'sort.asc' };
+var RTITLE = { new: 'recent.title', desc: 'recent.titleDesc', asc: 'recent.titleAsc' };   // หัวการ์ดเปลี่ยนตามการเรียง
 var rsort = RSORT[lsGet('jotjor_sort')] ? lsGet('jotjor_sort') : 'new';
 function sortList(list) {
   if (rsort === 'new') return list;
@@ -908,7 +909,7 @@ function recentBlock(d, mode) {
 
 /** การ์ดรายการล่าสุด (ใช้ทั้งหน้าหลักและหน้าลงลึก) d = ข้อมูลหน้าหลัก ใช้รายชื่อแท็ก, goFn = ชื่อฟังก์ชันเปลี่ยนหน้า */
 function recentList(d, list, page, PER, goFn) {
-  var h = '<section class="card"><div class="chead"><h2>' + t('recent.title') + '</h2><span class="ctl"><button class="rb' + (rsort === 'new' ? '' : ' on') + '" onclick="sortOpen()" aria-label="' + esc(t('sort.title') + ': ' + t(RSORT[rsort])) + '"><i class="ic ic-sort"></i></button></span></div>';
+  var h = '<section class="card"><div class="chead"><h2>' + t(RTITLE[rsort]) + '</h2><span class="ctl"><button class="rb' + (rsort === 'new' ? '' : ' on') + '" onclick="sortOpen()" aria-label="' + esc(t('sort.title') + ': ' + t(RSORT[rsort])) + '"><i class="ic ic-sort"></i></button></span></div>';
   var shown = 0, pages = Math.max(1, Math.ceil(list.length / PER));
   list.slice(page * PER, page * PER + PER).forEach(function (x) {
     var spend = x.dir === 'out';

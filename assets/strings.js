@@ -117,6 +117,8 @@ window.STRINGS = {
   'subs.none': 'ไม่ระบุ',
 
   'recent.title': 'รายการล่าสุด',
+  'recent.titleDesc': 'ยอดสูงสุด',
+  'recent.titleAsc': 'ยอดต่ำสุด',
   'recent.onlyUn': 'เฉพาะที่ยังไม่แท็ก ({n})',
   'recent.all': 'แสดงทั้งหมด',
   'recent.empty': 'ไม่มีรายการ',
@@ -267,7 +269,6 @@ window.STRINGS = {
   'about.dev': 'พัฒนาโดย',
   'about.company': 'บริษัท ทามาดะ สตูดิโอ จำกัด',
   'about.email': 'อีเมล',
-  'about.source': 'ซอร์สโค้ด',
   'about.version': 'เวอร์ชัน',
   'about.license': 'โอเพนซอร์ส สัญญาอนุญาต MIT'
 };
