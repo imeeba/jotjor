@@ -842,7 +842,7 @@ function suggestBlock(d) {
   if (!d.suggest || !d.suggest.length) return '';
   var h = '<section class="card"><h2>' + t('suggest.title') + '</h2>';
   d.suggest.forEach(function (s) {
-    h += '<div class="sg"><div class="gh"><span>' + t('suggest.in', { amount: money(s.amount) }) + '</span><span class="sub">🏦 x' + esc(s.ref) + '</span></div>';
+    h += '<div class="sg"><div class="gh"><span>' + t('suggest.in', { amount: money(s.amount) }) + '</span><span class="sub">🏦 ' + esc(acctFmt('bank', s.ref)) + '</span></div>';
     h += '<div class="sub">' + t('suggest.at', { time: fDT.format(new Date(s.inAt)) }) + '</div>';
     h += '<div class="sub">' + te('suggest.match', { time: fDT.format(new Date(s.outAt)), merchant: s.outMerchant ? ' · ' + s.outMerchant : '', tag: s.outTag || t('tag.untagged') }) + '</div>';
     h += '<div class="btns"><button class="pri" onclick="refundGo(' + Number(s.inRow) + ',' + Number(s.outRow) + ',true)">' + t('suggest.yes') + '</button>';
@@ -879,7 +879,7 @@ function recentList(d, list, page, PER, goFn) {
     shown++;
     var nm = x.merchant || (x.stream === 'credit' ? t(refund ? 'recent.creditRefund' : 'recent.creditName')
       : (x.stream === 'cash' ? t('recent.cashName') : (spend ? t('recent.outName') : t(x.linked ? 'recent.refundIn' : 'recent.in'))));
-    var who = x.stream === 'cash' ? t('recent.whoCash') : te(x.stream === 'credit' ? 'recent.whoCard' : 'recent.whoAcct', { ref: x.ref });
+    var who = x.stream === 'cash' ? t('recent.whoCash') : te(x.stream === 'credit' ? 'recent.whoCard' : 'recent.whoAcct', { ref: acctFmt(x.stream === 'credit' ? 'credit' : 'bank', x.ref) });
     h += '<div class="item" data-k="' + (x.row ? 'r' + Number(x.row) : 'new') + '"><div class="nm">' + esc(nm) + '</div><div class="am' + (spend ? '' : ' in') + '">' + (spend ? '' : '+') + money(x.amount) + '</div>';
     h += '<div class="sub">' + fDT.format(new Date(x.at)) + ' &middot; ' + who + (!spend && x.tag ? ' &middot; ' + esc(x.tag) : '')
       + (refund ? ' &middot; ' + t('recent.cardRefundNote') : '') + (x.linked ? ' &middot; ' + t('recent.linkedNote') : '') + '</div><div></div>';
@@ -917,8 +917,9 @@ window.openStream = openStream; window.stGo = stGo; window.stPick = stPick;
 function range(a, b) { return fDay.format(new Date(a)) + ' – ' + fDay.format(new Date(b - 86400000)); }
 
 function acctName(g, credit) {
-  if (g.name) return g.name + (g.last4 ? ' x-' + g.last4 : '');
-  return g.last4 ? t(credit ? 'drill.cardRef' : 'drill.acctRef', { ref: g.last4 }) : t('drill.noRef');
+  var k = credit ? 'credit' : 'bank';
+  if (g.name) return g.name + (g.last4 ? ' ' + acctFmt(k, g.last4) : '');
+  return g.last4 ? t(credit ? 'drill.cardRef' : 'drill.acctRef', { ref: acctFmt(k, g.last4) }) : t('drill.noRef');
 }
 
 function renderStream() {
@@ -963,19 +964,40 @@ function renderStream() {
 /* ---------- บัญชีและบัตร (หน้าตั้งค่า) ----------
  * ทุกบัญชี/บัตรที่เพิ่มเป็นของตัวเอง ไม่มีวันตัดรอบรายบัตร (ใช้วันตัดรอบของทั้งแอปในการ์ดวันตัดรอบ) */
 
+/* รูปแบบเลขบัญชี/บัตรทุกที่ในแอป: บัญชี XXX-X-XXXXX-X (4 หลักที่เก็บคือหลักที่ 6-9 ตามแจ้งเตือน KBank), บัตร XXXX-XXXX-XXXX-XXXX (4 หลักท้าย) */
+var NUM_GROUPS = { bank: [3, 1, 5, 1], credit: [4, 4, 4, 4] };
+function acctFmt(kind, last4) {
+  var k = String(last4 == null ? '' : last4);
+  if (!/^\d{4}$/.test(k)) return k ? 'x' + k : '';
+  return kind === 'bank' ? 'XXX-X-X' + k + '-X' : 'XXXX-XXXX-XXXX-' + k;
+}
+/** จัดรูปแบบตอนพิมพ์: ใส่ขีดตามกลุ่มหลัก ตัดหลักที่เกิน */
+function numGroup(kind, v) {
+  var dg = String(v || '').replace(/\D/g, ''), g = NUM_GROUPS[kind === 'bank' ? 'bank' : 'credit'], out = [], i = 0;
+  g.forEach(function (n) { if (i < dg.length) { out.push(dg.slice(i, i + n)); i += n; } });
+  return out.join('-');
+}
+function numInput(el, kind) {
+  var f = numGroup(kind, el.value);
+  if (f !== el.value) el.value = f;
+  accDraftSet(el);
+}
+window.numInput = numInput;
+
 function kindLabel(k) { return t(k === 'credit' ? 'acc.credit' : 'acc.bank'); }
 function dv(id, def) { return accDraft[id] != null ? accDraft[id] : (def == null ? '' : def); }
 function accDraftSet(el) { accDraft[el.id] = el.value; }
 window.accDraftSet = accDraftSet;
 function accInput(id, ph, attrs, def) {
-  return '<input id="' + id + '" ' + (attrs || '') + ' autocomplete="off" placeholder="' + esc(ph) + '" value="' + esc(dv(id, def)) + '" oninput="accDraftSet(this)">';
+  attrs = attrs || '';
+  return '<input id="' + id + '" ' + attrs + ' autocomplete="off" placeholder="' + esc(ph) + '" value="' + esc(dv(id, def)) + '"' + (attrs.indexOf('oninput') < 0 ? ' oninput="accDraftSet(this)"' : '') + '>';
 }
 
 function accRow(a, i) {
   var dis = sbAny() ? ' disabled' : '', credit = a.kind === 'credit';
   var h = '<div class="mgrow acrow" data-k="a:' + esc(a.kind + ':' + a.last4) + '"><span class="acic">' + (credit ? '💳' : '🏦') + '</span>'
     + '<span class="mgn"><span class="acn">' + esc(a.name || kindLabel(a.kind)) + '</span>'
-    + '<span class="acm"><span class="acx">x-' + esc(a.last4) + '</span><span class="pill' + (credit ? ' c' : ' t') + '">' + esc(kindLabel(a.kind)) + '</span></span></span>';
+    + '<span class="acm"><span class="acx">' + esc(acctFmt(a.kind, a.last4)) + '</span><span class="pill' + (credit ? ' c' : ' t') + '">' + esc(kindLabel(a.kind)) + '</span></span></span>';
   h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'edit\')" aria-label="' + esc(t('acc.edit')) + '"><i class="ic ic-edit"></i></button>';
   h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'del\')" aria-label="' + esc(t('mg.delete')) + '"><i class="ic ic-delete"></i></button></div>';
   return h;
@@ -986,15 +1008,15 @@ function accSheet() {
   var a = acc.a;
   if (acc.mode === 'edit') {
     return [t('acc.editTitle'), fld(t('acc.name'), accInput('acName', t('acc.namePh'), 'maxlength="30"', a.name))
-      + fld(t('acc.newNumLab'), accInput('acNum', t('acc.newNum', { last4: a.last4 }), 'inputmode="numeric"', '') + '<div class="sub hint">' + t('acc.newNumHint') + '</div>')
+      + fld(t('acc.newNumLab'), accInput('acNum', acctFmt(a.kind, a.last4), 'inputmode="numeric" oninput="numInput(this,\'' + a.kind + '\')"', '') + '<div class="sub hint">' + t('acc.newNumHint') + '</div>')
       + btns('pri', 'accSave', t('mg.save'), 'acc')];
   }
-  return [t('acc.delTitle'), '<div class="txt">' + te('acc.delAsk', { name: (a.name || kindLabel(a.kind)) + ' x-' + a.last4 }) + '</div>' + btns('dng', 'accDel', t('mg.delGo'), 'acc')];
+  return [t('acc.delTitle'), '<div class="txt">' + te('acc.delAsk', { name: (a.name || kindLabel(a.kind)) + ' ' + acctFmt(a.kind, a.last4) }) + '</div>' + btns('dng', 'accDel', t('mg.delGo'), 'acc')];
 }
 function accAddSheet() {
   var credit = accKind === 'credit';
   return [t('acc.addLong'), fld(t('acc.kind'), '<select id="acKind" data-title="' + esc(t('acc.kind')) + '" onchange="accKindSet(this.value)">' + opt('credit', t('acc.credit'), accKind) + opt('bank', t('acc.bank'), accKind) + '</select>')
-    + fld(t(credit ? 'acc.numCredit' : 'acc.numBank'), accInput('acNewNum', t(credit ? 'acc.numCreditPh' : 'acc.numBankPh'), 'inputmode="numeric"', '') + '<div class="sub hint">' + t('acc.numHint') + '</div>')
+    + fld(t(credit ? 'acc.numCredit' : 'acc.numBank'), accInput('acNewNum', t(credit ? 'acc.numCreditPh' : 'acc.numBankPh'), 'inputmode="numeric" oninput="numInput(this,\'' + accKind + '\')"', '') + '<div class="sub hint">' + t('acc.numHint') + '</div>')
     + fld(t('acc.name'), accInput('acNewName', t('acc.namePh'), 'maxlength="30"', ''))
     + btns('pri', 'accAdd', t('mg.save'), 'accadd')];
 }
@@ -1048,7 +1070,7 @@ function accAddOpen() {
   fsShow('accadd');
 }
 function accAddClose() { fsHide(function () { accAdding = false; accDraft = {}; }); }
-function accKindSet(k) { accKind = k === 'bank' ? 'bank' : 'credit'; renderFs(); }
+function accKindSet(k) { accKind = k === 'bank' ? 'bank' : 'credit'; if (accDraft.acNewNum) accDraft.acNewNum = numGroup(accKind, accDraft.acNewNum); renderFs(); }
 function accSave() {
   var a = acc.a, num = val('acNum');
   accRun('acc', 'updateAccount', [a.row, a.last4, { name: val('acName'), number: num }], 'a:' + a.kind + ':' + (num ? last4Of(a.kind, num) : a.last4));
