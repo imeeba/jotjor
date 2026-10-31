@@ -162,16 +162,17 @@ function accounts_() {
   const sh = SpreadsheetApp.getActive().getSheetByName('Accounts');
   const list = [];
   if (sh && sh.getLastRow() > 1) {
-    sh.getRange(2, 1, sh.getLastRow() - 1, ACC_HEADERS.length).getValues().forEach(r => {
+    sh.getRange(2, 1, sh.getLastRow() - 1, ACC_HEADERS.length).getValues().forEach((r, i) => {
       const name = String(r[0]).trim(), last4 = String(r[1]).trim();
       if (!name && !last4) return;
       const kind = String(r[2]).trim().toLowerCase();
       const cd = Number(r[3]);
       list.push({
+        row: i + 2,
         name: name,
         last4: last4,
         kind: kind === 'bank' || kind === 'cash' ? kind : 'credit',
-        cycleDay: cd >= 1 ? Math.floor(cd) : DEFAULT_CYCLE_DAY,
+        cycleDay: cd >= 1 && cd <= 31 ? Math.floor(cd) : DEFAULT_CYCLE_DAY,
         self: r[4] === true || String(r[4]).trim().toLowerCase() === 'true'
       });
     });
@@ -180,10 +181,15 @@ function accounts_() {
   return list;
 }
 
-/** วันตัดรอบบิลที่ใช้ตอนนี้ = บัตรเครดิตใบแรกในชีต Accounts (Dashboard ยังมีรอบเดียว) ไม่มีก็ใช้ CYCLE_DAY เดิม */
+/** วันตัดรอบของทั้งแอป: บัตรใบเดียว = วันของบัตรนั้น; หลายใบ = ค่า cycle_day ในชีต Settings (ไม่ตั้ง = บัตรใบแรก)
+ *  ไม่มีบัตรในชีต Accounts ใช้ CYCLE_DAY เดิม */
 function cycleDay_() {
-  const card = accounts_().filter(a => a.kind === 'credit')[0];
-  return card ? card.cycleDay : (Number(cfg_('CYCLE_DAY', String(DEFAULT_CYCLE_DAY))) || DEFAULT_CYCLE_DAY);
+  const cards = accounts_().filter(a => a.kind === 'credit');
+  if (cards.length > 1) {
+    const v = Number(settings_().cycle_day);
+    if (v >= 1 && v <= 31) return Math.floor(v);
+  }
+  return cards.length ? cards[0].cycleDay : (Number(cfg_('CYCLE_DAY', String(DEFAULT_CYCLE_DAY))) || DEFAULT_CYCLE_DAY);
 }
 
 /** สร้างชีต Accounts และย้ายค่า CYCLE_DAY / SELF_ACCOUNTS เดิมเข้าไปครั้งเดียว (ไม่ทำซ้ำถ้ามีข้อมูลแล้ว) */
@@ -682,18 +688,26 @@ function validTags_() {
 
 /* ---------- รอบบิล ---------- */
 
-/** รอบบิลที่ offset (0 = รอบปัจจุบัน, -1 = รอบก่อน) เริ่ม 00:00 วันถัดจากวันตัดรอบ */
-function cycleBounds_(now, offset) {
-  const cut = Math.min(cycleDay_(), 27);
+/** รอบบิลที่ offset (0 = รอบปัจจุบัน, -1 = รอบก่อน) เริ่ม 00:00 วันถัดจากวันตัดรอบ
+ *  day = วันตัดรอบ (ไม่ใส่ = ของทั้งแอป) เดือนที่ไม่มีวันนั้นใช้วันสุดท้ายของเดือน */
+function cycleBounds_(now, offset, day) {
+  day = day || cycleDay_();
   const y = Number(fmt_(now, 'yyyy'));
   const m = Number(fmt_(now, 'M'));
   const d = Number(fmt_(now, 'd'));
-  let sm = (d > cut ? m : m - 1) + (offset || 0);
-  const sy = y + Math.floor((sm - 1) / 12);
-  sm = ((sm - 1) % 12 + 12) % 12 + 1;
-  const ey = sm === 12 ? sy + 1 : sy;
-  const em = sm === 12 ? 1 : sm + 1;
-  return { start: bkk_(sy, sm, cut + 1), end: bkk_(ey, em, cut + 1) };
+  const k = (d > cutDay_(y, m, day) ? 0 : -1) + (offset || 0);
+  return { start: afterCut_(y, m + k, day), end: afterCut_(y, m + k + 1, day) };
+}
+
+/** วันตัดรอบจริงของเดือน m (ไม่เกินจำนวนวันในเดือน) */
+function cutDay_(y, m, day) {
+  return Math.min(day, new Date(Date.UTC(y, m, 0)).getUTCDate());
+}
+
+/** 00:00 ของวันถัดจากวันตัดรอบในเดือน m (m เกิน 1-12 ได้ จะเลื่อนปีให้) */
+function afterCut_(y, m, day) {
+  const yy = y + Math.floor((m - 1) / 12), mm = ((m - 1) % 12 + 12) % 12 + 1;
+  return new Date(bkk_(yy, mm, cutDay_(yy, mm, day)).getTime() + 86400000);
 }
 
 function bkk_(y, m, d) {
@@ -725,13 +739,26 @@ function bumpDash_() {
 function dashData(key, offset, fresh) {
   checkKey_(key);
   offset = Number(offset) || 0;
+  return cached_('dash_' + offset, fresh, () => dashData_(offset));
+}
+
+/** หน้าลงลึกของการ์ด stream = 'credit' | 'transfer' */
+function streamData(key, stream, offset, fresh) {
+  checkKey_(key);
+  if (stream !== 'credit' && stream !== 'transfer') throw new Error('bad stream');
+  offset = Number(offset) || 0;
+  return cached_('st_' + stream + '_' + offset, fresh, () => streamData_(stream, offset));
+}
+
+/** คืนผล fn() จากแคช (ชื่อผูกกับ dashVer_ ทุกการเขียนชีตจึงได้ค่าใหม่) */
+function cached_(name, fresh, fn) {
   const c = CacheService.getScriptCache();
   let ck = '';
-  try { ck = 'dash_' + dashVer_() + '_' + offset; } catch (err) { ck = ''; }
+  try { ck = name + '_' + dashVer_(); } catch (err) { ck = ''; }
   if (ck && !fresh) {
     try { const hit = c.get(ck); if (hit) return JSON.parse(hit); } catch (err) { /* อ่านแคชไม่ได้: คำนวณสด */ }
   }
-  const d = dashData_(offset);
+  const d = fn();
   if (ck) { try { c.put(ck, JSON.stringify(d), DASH_TTL); } catch (err) { /* ใหญ่เกินแคช: ข้าม */ } }
   return d;
 }
@@ -762,7 +789,11 @@ const API_FNS = {
   addSubTag: function (k, a) { return addSubTag(k, a[0], a[1]); },
   renameTag: function (k, a) { return renameTag(k, a[0], a[1], a[2]); },
   deleteTag: function (k, a) { return deleteTag(k, a[0], a[1]); },
-  setSetting: function (k, a) { return setSetting(k, a[0], a[1]); }
+  setSetting: function (k, a) { return setSetting(k, a[0], a[1]); },
+  streamData: function (k, a) { return streamData(k, a[0], a[1], a[2]); },
+  addAccount: function (k, a) { return addAccount(k, a[0]); },
+  updateAccount: function (k, a) { return updateAccount(k, a[0], a[1], a[2]); },
+  deleteAccount: function (k, a) { return deleteAccount(k, a[0], a[1]); }
 };
 
 /** คืน object ถ้า body เป็น JSON ที่มี fn (และไม่มี secret ของ MacroDroid) ไม่งั้น null */
@@ -788,9 +819,10 @@ function api_(b) {
 
 /* ---------- ตั้งค่า: ชีต Settings (key, value) ใช้ร่วมทุกเครื่อง ---------- */
 // key ที่ยอมรับ: step_credit, step_transfer = ขีด checkpoint ของการ์ดแต่ละใบ (บาท) ถ้าไม่ตั้งใช้ CHECKPOINT_STEP
+//               cycle_day = วันตัดรอบของทั้งแอป (ใช้เมื่อมีบัตรเครดิตหลายใบ)
 
 const SETTINGS_HEADERS = ['key', 'value'];
-const SETTING_KEYS = { step_credit: 'num', step_transfer: 'num' };
+const SETTING_KEYS = { step_credit: 'num', step_transfer: 'num', cycle_day: 'day' };
 
 function settings_() {
   const sh = SpreadsheetApp.getActive().getSheetByName('Settings');
@@ -812,7 +844,8 @@ function setSetting(appKey, key, value) {
   if (!Object.prototype.hasOwnProperty.call(SETTING_KEYS, key)) throw new Error('ไม่รู้จักค่าที่ตั้ง');
   const raw = String(value == null ? '' : value).replace(/,/g, '').trim();
   let val = '';
-  if (raw !== '') {
+  if (raw !== '' && SETTING_KEYS[key] === 'day') val = checkDay_(raw);
+  else if (raw !== '') {
     val = Number(raw);
     if (!(val >= 100 && val <= 10000000) || Math.floor(val) !== val) throw new Error('ขีด checkpoint ต้องเป็นจำนวนเต็ม 100 ถึง 10,000,000 บาท');
   }
@@ -823,6 +856,84 @@ function setSetting(appKey, key, value) {
     for (let i = 0; i < n.length; i++) if (String(n[i][0]).trim() === key) { row = i + 2; break; }
     if (row) sh.getRange(row, 2).setValue(val);
     else if (val !== '') sh.appendRow([key, val]);
+    return { ok: true };
+  });
+}
+
+/* ---------- บัญชี/บัตร: เพิ่ม แก้ ลบ จากหน้าตั้งค่า ----------
+ * เก็บแค่ 4 หลักที่ใช้จับคู่กับแจ้งเตือน: บัตร = 4 ตัวท้าย; บัญชีเลขเต็ม 10 หลัก = หลักที่ 6-9 (ที่ K PLUS แสดง) ไม่งั้น 4 ตัวท้าย
+ * บัญชีธนาคารเป็นบัญชีตัวเองเสมอ (self = TRUE) */
+
+function checkDay_(v) {
+  const n = Number(String(v).trim());
+  if (!(n >= 1 && n <= 31) || Math.floor(n) !== n) throw new Error('วันตัดรอบต้องเป็นวันที่ 1 ถึง 31');
+  return n;
+}
+
+function accDigits_(kind, number) {
+  const dg = String(number == null ? '' : number).replace(/\D/g, '');
+  if (dg.length < 4) throw new Error('หมายเลขต้องมีอย่างน้อย 4 หลัก');
+  return kind === 'bank' && dg.length === 10 ? dg.slice(5, 9) : dg.slice(-4);
+}
+
+function accName_(kind, last4) { return (kind === 'credit' ? 'บัตรเครดิต' : 'บัญชี') + ' •' + last4; }
+
+function accSheet_() {
+  const sh = ensureSheet_(SpreadsheetApp.getActive(), 'Accounts', ACC_HEADERS);
+  clearAccCache_();
+  return sh;
+}
+
+function accDup_(kind, last4, skipRow) {
+  return accounts_().some(a => a.kind === kind && a.row !== skipRow && refNorm_(a.last4) === refNorm_(last4));
+}
+
+/** p = { kind: 'credit'|'bank', number, cycleDay (บัตรเครดิตเท่านั้น) } */
+function addAccount(appKey, p) {
+  checkAppKey_(appKey);
+  p = p || {};
+  const kind = p.kind === 'bank' ? 'bank' : (p.kind === 'credit' ? 'credit' : '');
+  if (!kind) throw new Error('ต้องเลือกประเภท');
+  const last4 = accDigits_(kind, p.number);
+  const cd = kind === 'credit' ? checkDay_(p.cycleDay) : '';
+  return withLock_(function () {
+    const sh = accSheet_();
+    if (accDup_(kind, last4, 0)) throw new Error('มีหมายเลขนี้อยู่แล้ว');
+    const row = sh.getLastRow() + 1;
+    sh.getRange(row, 2).setNumberFormat('@');
+    sh.getRange(row, 1, 1, ACC_HEADERS.length).setValues([[accName_(kind, last4), last4, kind, cd, kind === 'bank']]);
+    clearAccCache_();
+    return { ok: true, row: row };
+  });
+}
+
+/** แก้หมายเลขและ/หรือวันตัดรอบของแถว row (ตรวจว่ายังเป็นแถวเดิมด้วย last4 เดิม) ประเภทเปลี่ยนไม่ได้ */
+function updateAccount(appKey, row, oldLast4, p) {
+  checkAppKey_(appKey);
+  p = p || {};
+  return withLock_(function () {
+    const sh = accSheet_();
+    const a = accounts_().filter(x => x.row === Number(row))[0];
+    if (!a || a.last4 !== String(oldLast4) || a.kind === 'cash') throw new Error('ไม่พบรายการนี้ (ข้อมูลอาจเปลี่ยนไปแล้ว ลองรีเฟรช)');
+    const last4 = String(p.number || '').trim() ? accDigits_(a.kind, p.number) : a.last4;
+    if (accDup_(a.kind, last4, a.row)) throw new Error('มีหมายเลขนี้อยู่แล้ว');
+    const cd = a.kind === 'credit' ? checkDay_(p.cycleDay) : '';
+    const auto = a.name === accName_(a.kind, a.last4) || !a.name;
+    sh.getRange(a.row, 2).setNumberFormat('@');
+    sh.getRange(a.row, 1, 1, ACC_HEADERS.length).setValues([[auto ? accName_(a.kind, last4) : a.name, last4, a.kind, cd, a.kind === 'bank' ? true : a.self]]);
+    clearAccCache_();
+    return { ok: true };
+  });
+}
+
+function deleteAccount(appKey, row, oldLast4) {
+  checkAppKey_(appKey);
+  return withLock_(function () {
+    const sh = accSheet_();
+    const a = accounts_().filter(x => x.row === Number(row))[0];
+    if (!a || a.last4 !== String(oldLast4) || a.kind === 'cash') throw new Error('ไม่พบรายการนี้ (ข้อมูลอาจเปลี่ยนไปแล้ว ลองรีเฟรช)');
+    sh.deleteRow(a.row);
+    clearAccCache_();
     return { ok: true };
   });
 }
@@ -1103,7 +1214,69 @@ function dashData_(offset) {
     total: { total: round2_(S.credit.total + S.transfer.total + S.cash.total), today: round2_(S.credit.today + S.transfer.today + S.cash.today) },
     subs: { cycle: finSubs_(subsCycle, mains), all: finSubs_(subsAll, mains) },
     recent: list.slice(0, 40),
-    untagged: list.filter(x => x.dir === 'out' && !x.tag).length
+    untagged: list.filter(x => x.dir === 'out' && !x.tag).length,
+    accounts: accounts_().filter(a => a.kind !== 'cash')
+      .map(a => ({ row: a.row, name: a.name, last4: a.last4, kind: a.kind, cycleDay: a.kind === 'credit' ? a.cycleDay : '' })),
+    cycleDay: cycleDay_(),
+    cycleSetting: Number(stt.cycle_day) || ''
+  };
+}
+
+/**
+ * หน้าลงลึกของการ์ด: credit แยกตามบัตร (ref = เลขท้ายบัตร) แต่ละใบใช้รอบของตัวเอง บัตรที่ไม่อยู่ในชีต Accounts ใช้รอบของทั้งแอป
+ * transfer แยกตามบัญชี (ref) ใช้รอบของทั้งแอป  ยอดคิดแบบเดียวกับ dashData_ (ข้าม = ไม่นับ, เงินคืนที่ยืนยันแล้วหักยอด)
+ */
+function streamData_(stream, offset) {
+  const now = new Date();
+  const app = cycleBounds_(now, offset);
+  const groups = {}, order = [];
+  accounts_().filter(a => a.kind === (stream === 'credit' ? 'credit' : 'bank')).forEach(a => {
+    const k = refNorm_(a.last4.replace(/\D/g, '').slice(-4));
+    if (!k || groups[k]) return;
+    const b = stream === 'credit' ? cycleBounds_(now, offset, a.cycleDay) : app;
+    groups[k] = { key: k, name: a.name, last4: a.last4, known: true, b: b, total: 0, count: 0, items: 0 };
+    order.push(k);
+  });
+  const rows = SpreadsheetApp.getActive().getSheetByName('Tx').getDataRange().getValues();
+  const mt = stream === 'transfer' ? matches_() : null;
+  const outTagByKey = {};
+  if (mt) rows.forEach((r, i) => {
+    if (i && r[COL.type] === 'deposit' && r[COL.dir] === 'out' && r[COL.dt]) outTagByKey[txKey_(r)] = r[COL.tag] ? String(r[COL.tag]) : '';
+  });
+  const type = stream === 'credit' ? 'credit' : 'deposit';
+  const list = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[COL.dt] || r[COL.type] !== type) continue;
+    const ref = r[COL.ref] === '' ? '' : String(r[COL.ref]);
+    const k = refNorm_(ref);
+    let g = groups[k];
+    if (!g) { g = groups[k] = { key: k, name: '', last4: ref, known: false, b: app, total: 0, count: 0, items: 0 }; order.push(k); }
+    const dt = new Date(r[COL.dt]);
+    if (dt < g.b.start || dt >= g.b.end) continue;
+    let tag = r[COL.tag] ? String(r[COL.tag]) : '';
+    const dir = r[COL.dir], amt = Number(r[COL.amount]) || 0;
+    let linked = false;
+    if (mt && dir === 'in') {
+      const ok = mt.link[txKey_(r)];
+      if (ok !== undefined && outTagByKey[ok] !== undefined) { linked = true; tag = outTagByKey[ok]; }
+    }
+    const v = linked ? -amt : spendVal_(stream, dir, amt);
+    list.push({ row: i + 1, at: dt.getTime(), stream: stream, dir: dir, amount: amt, merchant: r[COL.merchant] ? String(r[COL.merchant]) : '',
+                ref: ref, tag: tag, linked: linked, acct: k });
+    g.items++;
+    if (tag === SKIP_TAG || !v) continue;
+    g.total += v;
+    if (v > 0) g.count++;
+  }
+  list.sort((a, c) => c.at - a.at);
+  return {
+    now: now.getTime(), stream: stream,
+    cycle: { start: app.start.getTime(), end: app.end.getTime(), offset: offset || 0 },
+    accts: order.map(k => groups[k]).filter(g => g.known || g.items)
+      .map(g => ({ key: g.key, name: g.name, last4: g.last4, known: g.known, start: g.b.start.getTime(), end: g.b.end.getTime(),
+                   total: round2_(g.total), count: g.count })),
+    list: list
   };
 }
 

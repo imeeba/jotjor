@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap"></noscript>
 <script>try{var th=localStorage.getItem("jotjor_theme");if(th==="light"||th==="dark")document.documentElement.setAttribute("data-theme",th)}catch(e){}</script>
-<link rel="stylesheet" href="assets/style.css?v=14">
+<link rel="stylesheet" href="assets/style.css?v=15">
 </head>
 <body><div class="wrap">
 
@@ -60,6 +60,16 @@
   <div id="app"><div class="skel" role="status" data-aria="app.loading"><i class="sk h"></i><div class="skr"><i class="sk"></i><i class="sk"></i></div><i class="sk"></i><i class="sk"></i></div></div>
 </section>
 
+<section id="stream" hidden>
+  <div class="sethead"><button id="stback" type="button" data-aria="settings.back"><i class="ic ic-prev"></i></button><h1 id="sttitle"></h1></div>
+  <div class="top">
+    <button id="stprev" data-aria="top.prev"><i class="ic ic-prev"></i></button>
+    <div class="mid"><div class="cl" id="stcyc">&nbsp;</div><div class="sub" id="stupd">&nbsp;</div></div>
+    <button id="stnext" data-aria="top.next"><i class="ic ic-next"></i></button>
+  </div>
+  <div id="stapp"></div>
+</section>
+
 <section id="settings" hidden>
   <div class="sethead"><button id="setback" type="button" data-aria="settings.back"><i class="ic ic-prev"></i></button><h1 data-t="settings.title"></h1><button id="themeBtn" class="themebtn" type="button"><i class="ic ic-monitor"></i></button></div>
   <section class="card setcard"><h2 data-t="settings.cp"></h2>
@@ -69,12 +79,13 @@
     <button id="stSave" class="pri" type="button" data-t="cash.save"></button>
     <div id="stMsg" class="sub" style="margin-top:8px"></div>
   </section>
+  <section class="card setcard" id="accbox"></section>
   <section class="card setcard" id="mgbox"></section>
   <section class="card setcard"><div class="sub" data-t="settings.connected"></div>
     <button id="logout" class="dng" type="button" data-t="settings.logout"></button></section>
 </section>
 
 </div>
-<script src="assets/strings.js?v=14"></script>
-<script src="assets/app.js?v=14"></script>
+<script src="assets/strings.js?v=15"></script>
+<script src="assets/app.js?v=15"></script>
 </body></html>

@@ -9,6 +9,8 @@ var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 var recentPage = { out: 0, in: 0 }, offset = 0, DATA = null, tab = 'out', catAmt = false, catSubs = false, unOpen = false;
 var mg = null, mgErr = '', mgBusy = false, mgNew = '', MGL = [];
 var cDir = 'out', cBusy = false;
+var ST = { stream: '', offset: 0, data: null, page: 0, acct: null };   // หน้าลงลึกของการ์ด
+var acc = null, accErr = '', accBusy = false, accKind = 'credit';      // ส่วนบัญชีและบัตรในหน้าตั้งค่า
 var pending = 0, wgen = 0;   // จำนวนการเขียนที่ยังค้าง / ตัวนับรุ่นของการแก้ ใช้ทิ้งผลโหลดที่เก่ากว่าหน้าจอ
 
 function $(id) { return document.getElementById(id); }
@@ -128,11 +130,17 @@ $('stSave').onclick = function () {
   });
 };
 function showView(v) {
-  view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings';
-  if (v === 'settings') { fillSteps(); renderMg(); window.scrollTo(0, 0); }
+  view = v; $('main').hidden = v !== 'main'; $('settings').hidden = v !== 'settings'; $('stream').hidden = v !== 'stream';
+  if (v === 'settings') { fillSteps(); renderAcc(); renderMg(); }
+  if (v !== 'main') window.scrollTo(0, 0);
 }
-$('gear').onclick = function () { showView('settings'); };
-$('setback').onclick = function () { showView('main'); };
+/* หน้าย่อย (ตั้งค่า / ลงลึก) ใส่ใน history ให้ปุ่มย้อนกลับของมือถือกลับหน้าหลัก ไม่ใช่ปิดแอป */
+function openSub(v) { if (view === 'main') history.pushState({ v: v }, ''); else history.replaceState({ v: v }, ''); showView(v); }
+function closeSub() { if (history.state && history.state.v) history.back(); else showView('main'); }
+window.addEventListener('popstate', function () { if (view !== 'main' && $('setup').hidden) showView('main'); });
+if (history.state && history.state.v) history.replaceState(null, '');
+$('gear').onclick = function () { openSub('settings'); };
+$('setback').onclick = closeSub;
 var THEME_IC = { system: 'monitor', light: 'sun', dark: 'moon' };
 function applyTheme(th) {
   var r = document.documentElement;
@@ -176,14 +184,15 @@ function optimistic(patch, send, failMsg, onFail) {
   wgen++; pending++;
   try { patch(DATA); } catch (e) { /* คำนวณในเครื่องพลาด: ปล่อยให้โหลดจากชีตแก้ให้ */ }
   showErr(''); saveCache(); render();
+  if (view === 'stream') renderStream();
   return send().then(function () {
-    pending--; wgen++; load();
+    pending--; wgen++; load(); if (view === 'stream') loadStream();
   }, function (e) {
     pending--; wgen++;
     if (guard(e)) return;
     DATA = JSON.parse(snap); saveCache(); render();
     if (onFail) onFail(e); else showErr(t(failMsg, { e: errMsg(e) }));
-    load();
+    load(); if (view === 'stream') loadStream();
   });
 }
 
@@ -229,15 +238,24 @@ function patchTag(d, row, nt) {
   x.tag = nt;
 }
 
+/** แก้แท็กในข้อมูลหน้าลงลึกด้วย (ยอดของบัตร/บัญชีเปลี่ยนเมื่อสลับเข้าออก "ข้าม") */
+function patchStreamTag(row, nt) {
+  var sd = ST.data, x = sd && sd.list.filter(function (r) { return r.row === row; })[0];
+  if (!x || x.linked || x.tag === nt) return;
+  var g = sd.accts.filter(function (a) { return a.key === x.acct; })[0], v = spendOf(x);
+  if (g) g.total += (nt === SKIP ? 0 : v) - (x.tag === SKIP ? 0 : v);
+  x.tag = nt;
+}
+
 function setTag(row, sel) {
   var nt = sel.value;
-  optimistic(function (d) { patchTag(d, row, nt); }, function () { return api('setTag', [row, nt]); }, 'tag.saveFail');
+  optimistic(function (d) { patchTag(d, row, nt); patchStreamTag(row, nt); }, function () { return api('setTag', [row, nt]); }, 'tag.saveFail');
 }
 window.setTag = setTag;
 
 function recentGo(n) { recentPage[tab] = Math.max(0, recentPage[tab] + n); render(); }
 window.recentGo = recentGo;
-function toggleCat() { catAmt = !catAmt; render(); }
+function toggleCat() { catAmt = !catAmt; render(); if (view === 'stream') renderStream(); }
 function toggleSubs() { catSubs = !catSubs; render(); }
 function toggleUnOpen() { unOpen = !unOpen; render(); }
 window.toggleCat = toggleCat; window.toggleSubs = toggleSubs; window.toggleUnOpen = toggleUnOpen;
@@ -501,9 +519,10 @@ function unBar(d) {
   return h + '</section>';
 }
 
-function streamCard(cls, label, s, step) {
+function streamCard(cls, label, s, stream) {
   var pct = Math.max(0, Math.min(100, s.progress * 100));
-  return '<div class="mini ' + cls + '"><div class="lab">' + label + '</div><div class="num">' + money(s.total) + '</div>'
+  return '<div class="mini ' + cls + ' tap" role="button" tabindex="0" onclick="openStream(\'' + stream + '\')" aria-label="' + esc(t('drill.open')) + '">'
+    + '<i class="ic ic-next go"></i><div class="lab">' + label + '</div><div class="num">' + money(s.total) + '</div>'
     + '<div class="bar cpb"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
     + '<div class="cp"><span>' + money(s.prev, 0) + '</span><span>' + money(s.next, 0) + '</span></div></div>';
 }
@@ -543,10 +562,16 @@ function incomeBlock(d) {
 }
 
 function recentBlock(d, mode) {
-  var h = '<section class="card"><h2>' + t('recent.title') + '</h2>';
   var list = d.recent.filter(function (x) { return mode === 'in' ? x.dir === 'in' : (x.dir === 'out' || x.stream === 'credit'); });   // หน้ารายจ่ายรวมเงินคืนบัตรที่หักยอด
-  var shown = 0, PER = 5, pages = Math.max(1, Math.ceil(list.length / PER)), page = Math.min(recentPage[mode], pages - 1);
-  recentPage[mode] = page;
+  var pages = Math.max(1, Math.ceil(list.length / 5));
+  recentPage[mode] = Math.min(recentPage[mode], pages - 1);
+  return recentList(d, list, recentPage[mode], 5, 'recentGo');
+}
+
+/** การ์ดรายการล่าสุด (ใช้ทั้งหน้าหลักและหน้าลงลึก) d = ข้อมูลหน้าหลัก ใช้รายชื่อแท็ก, goFn = ชื่อฟังก์ชันเปลี่ยนหน้า */
+function recentList(d, list, page, PER, goFn) {
+  var h = '<section class="card"><h2>' + t('recent.title') + '</h2>';
+  var shown = 0, pages = Math.max(1, Math.ceil(list.length / PER));
   list.slice(page * PER, page * PER + PER).forEach(function (x) {
     var spend = x.dir === 'out';
     var refund = x.stream === 'credit' && !spend;
@@ -557,7 +582,7 @@ function recentBlock(d, mode) {
     h += '<div class="item"><div class="nm">' + esc(nm) + '</div><div class="am' + (spend ? '' : ' in') + '">' + (spend ? '' : '+') + money(x.amount, 2) + '</div>';
     h += '<div class="sub">' + fDT.format(new Date(x.at)) + ' &middot; ' + who + (!spend && x.tag ? ' &middot; ' + esc(x.tag) : '')
       + (refund ? ' &middot; ' + t('recent.cardRefundNote') : '') + (x.linked ? ' &middot; ' + t('recent.linkedNote') : '') + '</div><div></div>';
-    if (spend || refund) {
+    if ((spend || refund) && d) {
       h += '<select class="' + (x.tag ? '' : 'un') + '"' + (x.row ? '' : ' disabled') + ' onchange="setTag(' + Number(x.row) + ',this)"><option value="">' + t('tag.pick') + '</option>';
       h += tagOpts(d, x.tag);
       h += '</select>';
@@ -565,9 +590,148 @@ function recentBlock(d, mode) {
     h += '</div>';
   });
   if (!shown) h += '<div class="sub" style="padding:12px 0">' + t('recent.empty') + '</div>';
-  if (pages > 1) h += '<div class="pg"><button' + (page <= 0 ? ' disabled' : '') + ' onclick="recentGo(-1)">&#8249; ' + t('pg.prev') + '</button><span class="sub">' + t('pg.page', { p: page + 1, n: pages }) + '</span><button' + (page >= pages - 1 ? ' disabled' : '') + ' onclick="recentGo(1)">' + t('pg.next') + ' &#8250;</button></div>';
+  if (pages > 1) h += '<div class="pg"><button' + (page <= 0 ? ' disabled' : '') + ' onclick="' + goFn + '(-1)">&#8249; ' + t('pg.prev') + '</button><span class="sub">' + t('pg.page', { p: page + 1, n: pages }) + '</span><button' + (page >= pages - 1 ? ' disabled' : '') + ' onclick="' + goFn + '(1)">' + t('pg.next') + ' &#8250;</button></div>';
   return h + '</section>';
 }
+
+/* ---------- หน้าลงลึกของการ์ด: สัดส่วนแต่ละบัตร/บัญชี + รายการล่าสุดเฉพาะประเภทนั้น ---------- */
+
+function openStream(s) {
+  ST = { stream: s, offset: offset, data: null, page: 0, acct: null };
+  openSub('stream'); renderStream(); loadStream();
+}
+function loadStream(fresh) {
+  var s = ST.stream, off = ST.offset;
+  api('streamData', [s, off, fresh === true ? 1 : 0]).then(function (d) {
+    if (view !== 'stream' || s !== ST.stream || off !== ST.offset || pending > 0) return;
+    ST.data = d; renderStream();
+  }, function (e) {
+    if (!guard(e) && view === 'stream') $('stapp').innerHTML = '<div class="err">' + esc(t('load.fail', { e: errMsg(e) })) + '</div>';
+  });
+}
+function stGo(n) { ST.page = Math.max(0, ST.page + n); renderStream(); }
+function stPick(k) { ST.acct = ST.acct === k ? null : k; ST.page = 0; renderStream(); }
+window.openStream = openStream; window.stGo = stGo; window.stPick = stPick;
+
+function range(a, b) { return fDay.format(new Date(a)) + ' – ' + fDay.format(new Date(b - 86400000)); }
+
+function acctName(g, credit) {
+  if (g.name) return g.name;
+  return g.last4 ? t(credit ? 'drill.cardRef' : 'drill.acctRef', { ref: g.last4 }) : t('drill.noRef');
+}
+
+function renderStream() {
+  var credit = ST.stream === 'credit', sd = ST.data;
+  $('sttitle').innerHTML = icons(esc(t(credit ? 'card.credit' : 'card.transfer')));
+  $('stnext').disabled = ST.offset >= 0;
+  if (!sd) {
+    $('stcyc').innerHTML = '&nbsp;'; $('stupd').innerHTML = '&nbsp;';
+    $('stapp').innerHTML = '<div class="skel"><i class="sk"></i><i class="sk h"></i></div>';
+    return;
+  }
+  var groups = sd.accts.slice().sort(function (a, b) { return b.total - a.total; });
+  var sel = groups.filter(function (g) { return g.key === ST.acct; })[0];
+  var same = groups.every(function (g) { return g.start === sd.cycle.start && g.end === sd.cycle.end; });
+  var cur = ST.offset === 0 ? t('top.current') : '';
+  $('stcyc').textContent = sel ? range(sel.start, sel.end) + cur : (same || !credit ? range(sd.cycle.start, sd.cycle.end) + cur : t('drill.ownCycle'));
+  $('stupd').textContent = t('top.updated', { time: fT.format(new Date(sd.now)) });
+
+  var total = 0;
+  groups.forEach(function (g) { if (g.total > 0) total += g.total; });
+  var h = '<section class="card"><div class="chead"><h2>' + t(credit ? 'drill.shareCredit' : 'drill.shareTransfer') + '</h2><span class="ctl"><button class="mb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
+  if (!groups.length) h += '<div class="sub">' + t('cat.empty') + '</div>';
+  groups.forEach(function (g) {
+    var p = total > 0 ? Math.max(0, g.total) / total * 100 : 0;
+    h += '<div class="cat tap' + (sel ? (sel === g ? ' on' : ' off') : '') + '" role="button" tabindex="0" onclick="stPick(\'' + esc(g.key) + '\')"><div class="crow">'
+      + '<span class="cn">' + esc(acctName(g, credit)) + '</span>'
+      + '<span class="bar ' + (credit ? 'c' : 't') + '"><i style="width:' + Math.min(100, p).toFixed(1) + '%"></i></span>'
+      + '<span class="cv">' + (catAmt ? money(g.total) : p.toFixed(0) + '%') + '</span></div>'
+      + '<div class="sub dsub">' + t('drill.count', { n: g.count }) + (credit && !same ? ' &middot; ' + range(g.start, g.end) : '') + '</div></div>';
+  });
+  if (groups.length > 1) h += '<div class="sub" style="margin-top:8px">' + t('drill.pickHint') + '</div>';
+  h += '</section>';
+
+  var list = sd.list.filter(function (x) { return (x.dir === 'out' || x.stream === 'credit') && (!ST.acct || x.acct === ST.acct); });
+  var PER = 10, pages = Math.max(1, Math.ceil(list.length / PER));
+  ST.page = Math.min(ST.page, pages - 1);
+  h += recentList(DATA, list, ST.page, PER, 'stGo');
+  $('stapp').innerHTML = icons(h);
+}
+
+/* ---------- บัญชีและบัตร (หน้าตั้งค่า) ---------- */
+
+function accRow(a, i) {
+  var dis = accBusy ? ' disabled' : '', credit = a.kind === 'credit';
+  var h = '<div class="mgrow"><span class="mgn">' + (credit ? '💳 ' : '🏦 ') + esc(a.name || a.last4) + '</span>';
+  h += '<span class="sub">' + (credit ? t('acc.cycle', { d: a.cycleDay }) : t('acc.self')) + '</span>';
+  h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'edit\')" aria-label="' + esc(t('mg.rename')) + '"><i class="ic ic-edit"></i></button>';
+  h += '<button class="mb ib"' + dis + ' onclick="accOpen(' + i + ',\'del\')" aria-label="' + esc(t('mg.delete')) + '"><i class="ic ic-delete"></i></button></div>';
+  if (!acc || acc.i !== i) return h;
+  h += '<div class="mgp">';
+  if (acc.mode === 'edit') {
+    h += '<div class="lab">' + te('acc.newNum', { last4: a.last4 }) + '</div><input id="acNum" inputmode="numeric" autocomplete="off" value="' + esc(acc.num || '') + '">';
+    if (credit) h += '<div class="lab" style="margin-top:8px">' + t('acc.day') + '</div><input id="acDay" inputmode="numeric" autocomplete="off" value="' + esc(acc.day != null ? acc.day : a.cycleDay) + '">';
+    h += '<div class="btns"><button class="pri"' + dis + ' onclick="accSave()">' + t('mg.save') + '</button><button' + dis + ' onclick="accCancel()">' + t('mg.cancel') + '</button></div>';
+  } else {
+    h += '<div class="txt">' + te('acc.delAsk', { name: a.name || a.last4 }) + '</div>';
+    h += '<div class="btns"><button class="dng"' + dis + ' onclick="accDel()">' + t('mg.delGo') + '</button><button' + dis + ' onclick="accCancel()">' + t('mg.cancel') + '</button></div>';
+  }
+  if (accErr) h += '<div class="err">' + esc(accErr) + '</div>';
+  return h + '</div>';
+}
+
+function accInner(d) {
+  var list = d.accounts || [], dis = accBusy ? ' disabled' : '';
+  var cards = list.filter(function (a) { return a.kind === 'credit'; });
+  var h = '<h2>' + t('acc.title') + '</h2><div class="sub">' + t('acc.hint') + '</div>';
+  if (cards.length > 1) {
+    h += '<div class="accyc"><div class="lab">' + t('acc.appCycle') + '</div><div class="sub">' + t('acc.appCycleHint') + '</div>';
+    h += '<div class="addrow"><input id="cyApp" inputmode="numeric" autocomplete="off" value="' + esc(d.cycleSetting || d.cycleDay || '') + '"><button' + dis + ' onclick="accCycle()">' + t('mg.save') + '</button></div></div>';
+  }
+  if (!list.length) h += '<div class="sub" style="padding:8px 0">' + t('acc.empty') + '</div>';
+  list.forEach(function (a, i) { h += accRow(a, i); });
+  var credit = accKind === 'credit';
+  h += '<div class="accadd"><div class="seg"><button type="button" class="' + (credit ? 'on' : '') + '" onclick="accKindSet(\'credit\')">' + t('acc.credit') + '</button><button type="button" class="' + (credit ? '' : 'on') + '" onclick="accKindSet(\'bank\')">' + t('acc.bank') + '</button></div>';
+  h += '<div class="addrow"><input id="acNewNum" inputmode="numeric" autocomplete="off" placeholder="' + esc(t(credit ? 'acc.numCredit' : 'acc.numBank')) + '">';
+  if (credit) h += '<input id="acNewDay" class="day" inputmode="numeric" autocomplete="off" placeholder="' + esc(t('acc.day')) + '">';
+  h += '<button' + dis + ' onclick="accAdd()">' + t('acc.add') + '</button></div><div class="sub" style="margin-top:6px">' + t('acc.numHint') + '</div></div>';
+  if (!acc && accErr) h += '<div class="err">' + esc(accErr) + '</div>';
+  return h;
+}
+
+function renderAcc() { var b = $('accbox'); if (b && DATA) b.innerHTML = icons(accInner(DATA)); }
+
+function accRun(name, args) {
+  accBusy = true; accErr = ''; renderAcc();
+  api(name, args).then(function () { accBusy = false; acc = null; accErr = ''; load(); }, function (e) {
+    accBusy = false;
+    if (!guard(e)) { accErr = errMsg(e); renderAcc(); }
+  });
+}
+function val(id) { var el = $(id); return el ? el.value.trim() : ''; }
+function dayOk(v) { var n = Number(v); return n >= 1 && n <= 31 && Math.floor(n) === n; }
+function accOpen(i, mode) { acc = { i: i, mode: mode }; accErr = ''; renderAcc(); var el = $('acNum'); if (el) el.focus(); }
+function accCancel() { acc = null; accErr = ''; renderAcc(); }
+function accKindSet(k) { accKind = k; accErr = ''; renderAcc(); }
+function accSave() {
+  var a = DATA.accounts[acc.i];
+  acc.num = val('acNum'); acc.day = a.kind === 'credit' ? val('acDay') : '';
+  if (a.kind === 'credit' && !dayOk(acc.day)) { accErr = t('acc.badDay'); renderAcc(); return; }
+  accRun('updateAccount', [a.row, a.last4, { number: acc.num, cycleDay: acc.day }]);
+}
+function accDel() { var a = DATA.accounts[acc.i]; accRun('deleteAccount', [a.row, a.last4]); }
+function accAdd() {
+  var p = { kind: accKind, number: val('acNewNum'), cycleDay: accKind === 'credit' ? val('acNewDay') : '' };
+  if (accKind === 'credit' && !dayOk(p.cycleDay)) { accErr = t('acc.badDay'); renderAcc(); return; }
+  accRun('addAccount', [p]);
+}
+function accCycle() {
+  var v = val('cyApp');
+  if (!dayOk(v)) { accErr = t('acc.badDay'); renderAcc(); return; }
+  accRun('setSetting', ['cycle_day', v]);
+}
+window.accOpen = accOpen; window.accCancel = accCancel; window.accKindSet = accKindSet;
+window.accSave = accSave; window.accDel = accDel; window.accAdd = accAdd; window.accCycle = accCycle;
 
 /* แทนอีโมจิในข้อความด้วยไอคอนจาก icons/ (Phosphor Thin, MIT) */
 function icons(h) {
@@ -598,7 +762,7 @@ function render() {
     h += unBar(d) + suggestBlock(d) + '<div id="topslot"></div>';
     h += '<div class="toprow"><section class="card hero"><div class="lab">' + t('total.label') + '</div><div class="big">' + money(d.total.total) + '<span>' + t('unit.baht') + '</span></div>';
     h += '<div class="sub">' + t('total.today', { n: money(d.total.today) }) + '</div></section>' + cashTile(d) + '</div><div class="split">';
-    h += streamCard('c', t('card.credit'), c) + streamCard('t', t('card.transfer'), tr) + '</div>';
+    h += streamCard('c', t('card.credit'), c, 'credit') + streamCard('t', t('card.transfer'), tr, 'transfer') + '</div>';
     if (d.unknown) h += '<div class="warnb">' + t('warn.unknown', { n: d.unknown }) + '</div>';
     h += catBlock(d) + recentBlock(d, 'out');
   } else {
@@ -606,7 +770,7 @@ function render() {
   }
   $('app').innerHTML = icons(h);
   $('topslot').appendChild($('topbar'));
-  renderMg();
+  renderMg(); renderAcc();
 }
 
 /* ---------- เริ่มต้น ---------- */
@@ -618,7 +782,7 @@ function applyStrings() {
   Array.prototype.forEach.call(document.querySelectorAll('[data-aria]'), function (el) { el.setAttribute('aria-label', t(el.getAttribute('data-aria'))); });
 }
 
-function busy() { if (mg || mgBusy) return true; var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
+function busy() { if (mg || mgBusy || acc || accBusy) return true; var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
 
 applyStrings();
 $('prev').onclick = function () { offset--; load(); };
@@ -630,8 +794,16 @@ $('cgo').onclick = cashGo;
 $('cashClose').onclick = closeCash; $('sheetbg').onclick = closeCash;
 $('tabOut').onclick = function () { tab = 'out'; if (DATA) render(); };
 $('tabIn').onclick = function () { tab = 'in'; if (DATA) render(); };
-document.addEventListener('visibilitychange', function () { if (!document.hidden && !$('main').hidden && !busy()) load(); });
-setInterval(function () { if (!document.hidden && !$('main').hidden && !busy()) load(); }, 60000);
+function tick() {
+  if (document.hidden || busy()) return;
+  if (view === 'main' && !$('main').hidden) load();
+  else if (view === 'stream') loadStream();
+}
+document.addEventListener('visibilitychange', tick);
+setInterval(tick, 60000);
+$('stback').onclick = closeSub;
+$('stprev').onclick = function () { ST.offset--; ST.data = null; ST.page = 0; renderStream(); loadStream(); };
+$('stnext').onclick = function () { if (ST.offset < 0) { ST.offset++; ST.data = null; ST.page = 0; renderStream(); loadStream(); } };
 
 /* หน้าเว็บเองเปิดจากแคชในเครื่อง (sw.js); เมื่อมีเวอร์ชันใหม่ขึ้นปุ่มให้แตะโหลดใหม่ */
 if ('serviceWorker' in navigator) {
