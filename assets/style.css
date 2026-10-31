@@ -114,11 +114,12 @@ details.card summary{font-weight:600;cursor:pointer}
 .chead h2{margin:0}
 .cat{border-top:1px solid var(--line)}
 .cat:first-of-type{border-top:0}
-.crow{display:grid;grid-template-columns:minmax(0,34%) 1fr auto;align-items:center;gap:10px;padding:11px 0}
-.crow.s{padding:7px 0 7px 14px;font-size:14px;color:var(--mute)}
+.crow{display:grid;grid-template-columns:35% minmax(0,1fr) 76px;align-items:center;gap:10px;padding:11px 0}
+.crow.s{padding:7px 0;font-size:14px;color:var(--mute)}
+.crow.s .cn{padding-left:14px}
 .cn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .crow.s .cn{font-weight:500}
-.cv{font-variant-numeric:tabular-nums;font-weight:600;min-width:44px;text-align:right}
+.cv{font-variant-numeric:tabular-nums;font-weight:600;min-width:0;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cat.un .cn{color:var(--warnink)}
 .car{font-style:normal;margin-left:6px;color:var(--mute);display:inline-block;transition:transform .15s}
 .car.o{transform:rotate(180deg)}
@@ -148,14 +149,12 @@ select{-webkit-appearance:none;appearance:none;padding-left:16px!important;paddi
 .cashtile{display:block;width:100%;min-width:0;text-align:left;border:0;font:inherit;color:var(--ink);padding:14px 12px;cursor:pointer;overflow:hidden}
 .cashtile .num{font-size:22px;font-weight:700;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
 .cashtile .lab{white-space:nowrap}
-#sheet{position:fixed;inset:0;z-index:30}
-#sheetbg{position:absolute;inset:0;background:rgba(0,0,0,.45)}
 .sheetbox{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:560px;border-radius:24px 24px 0 0;max-height:88vh;overflow:auto;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
 .ctl{display:flex;gap:6px}
 .mb.mt.on{background:var(--ink);color:var(--bg)}
 .mb.mt{width:36px;padding:0}.mb.mt .ic{width:18px;height:18px;vertical-align:middle}
 .crow.s .bar i{opacity:.5}
-#stCredit,#stTransfer{width:100%;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 14px;margin-top:6px}
+.stin{width:100%;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 14px;margin-top:6px}
 #stSave{width:100%;height:42px;border-radius:999px;border:0;background:var(--ink);color:var(--bg);font:inherit;font-weight:600;margin-top:12px}
 #stSave:disabled{opacity:.4}
 .ic-add{--i:url(../icons/add.svg)}.ic-edit{--i:url(../icons/edit.svg)}.ic-delete{--i:url(../icons/delete.svg)}
@@ -191,4 +190,133 @@ select{-webkit-appearance:none;appearance:none;padding-left:16px!important;paddi
 .accadd{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 .accadd .addrow{margin-top:8px}
 .addrow input.day{flex:none;width:96px}
-.cat.tap .crow{grid-template-columns:minmax(0,46%) 1fr auto}
+
+/* ---------- รอบ UI polish (2026-10-31) ---------- */
+
+/* ช่องกรอก: ระยะซ้าย/ขวาเท่ากันทุกช่อง */
+input{padding-left:16px!important;padding-right:16px!important}
+input::placeholder{color:var(--mute);opacity:1}
+
+/* ระยะห่างใต้คำบรรยายก่อนแถวที่มีเส้นขอบบน */
+.card h2 + .sub{margin-bottom:14px}
+.cplab{margin-top:4px}
+.cprow{margin-top:12px}
+
+/* แถบพลังรวมในการ์ดยอดรวม */
+.hero .bar.cpb{background:rgba(255,255,255,.3);margin-top:12px}
+.hero .bar.cpb i{background:#fff}
+.hero .cp{color:rgba(255,255,255,.85);margin-top:4px}
+.big b{font-weight:inherit}
+
+/* หน้าลงลึก: ปุ่มกลับ (มีหน้าที่เดียว) แยกจากแคปซูลเลือกรอบ */
+.backbtn .ic{width:20px;height:20px;vertical-align:middle}
+.ic-back{--i:url(../icons/back.svg)}.ic-check{--i:url(../icons/check.svg)}.ic-caret{--i:url(../icons/caret-down.svg)}
+.capsule{display:flex;align-items:center;gap:4px;margin:14px auto 0;max-width:360px;padding:4px;border-radius:999px;background:var(--card);box-shadow:var(--shadow);border:1px solid var(--line)}
+.capsule .mid{flex:1;min-width:0;text-align:center;line-height:1.25}
+.capsule .sub{font-size:11px;white-space:nowrap}
+.capsule button{width:36px;height:36px;flex:none;border-radius:999px;border:0;background:var(--pill);color:var(--ink)}
+.capsule button .ic{width:16px;height:16px;vertical-align:middle}
+.capsule button:disabled{opacity:.3;background:transparent}
+
+/* bottom sheet ทั่วไป */
+.sheetwrap{position:fixed;inset:0;z-index:30}
+.sheetbg{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.sheetwrap .sheetbox{animation:su .26s cubic-bezier(.2,.8,.2,1)}
+.sheetwrap .sheetbg{animation:fi .26s ease}
+.sheetwrap.out .sheetbox{animation:sd .19s ease-in forwards}
+.sheetwrap.out .sheetbg{animation:fo .19s ease-in forwards}
+@keyframes su{from{transform:translateY(100%)}}
+@keyframes sd{to{transform:translateY(100%)}}
+@keyframes fi{from{opacity:0}}
+@keyframes fo{to{opacity:0}}
+.grab{display:block;width:40px;height:4px;border-radius:4px;background:var(--line);margin:-6px auto 12px}
+.pkbox{padding-left:12px;padding-right:12px}
+.pkbox h2{padding:0 6px}
+.pklist{max-height:62vh;overflow:auto;-webkit-overflow-scrolling:touch}
+.pko{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:48px;padding:0 14px;border:0;border-radius:14px;background:transparent;color:var(--ink);font:inherit;font-size:16px;text-align:left}
+.pko.ind{padding-left:30px}
+.pko.on{background:var(--csoft);font-weight:600}
+.pko .ic{width:18px;height:18px;color:var(--c);flex:none}
+.pkg{padding:12px 14px 4px;font-size:12px;color:var(--mute);font-weight:600}
+
+/* ปุ่มแทน select */
+select.nsel{display:none!important}
+.selbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;height:40px;padding:0 14px 0 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;text-align:left}
+.selbtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.selbtn .ic{width:14px;height:14px;color:var(--mute);flex:none}
+.selbtn.un{border-color:var(--c)}
+.selbtn.ph span{color:var(--mute)}
+.selbtn:disabled{opacity:.5}
+.item .selbtn{grid-column:1/-1;margin-top:6px;height:38px}
+.mgp .selbtn{margin-top:8px;height:42px}
+
+/* บัญชี/บัตรใน Settings */
+.acrow{gap:10px;padding:10px 0}
+.acic .ic{width:22px;height:22px;vertical-align:middle;color:var(--mute)}
+.acrow .mgn{display:flex;flex-direction:column;gap:2px}
+.acn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acm{display:flex;align-items:center;gap:6px;font-weight:400;font-size:12px;color:var(--mute)}
+.acx{font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;background:var(--pill);color:var(--mute)}
+.pill.c{background:var(--csoft);color:var(--c)}.pill.t{background:var(--tsoft);color:var(--t)}
+.acempty{padding:4px 0 10px}
+.addlong{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:44px;margin-top:12px;border-radius:999px;border:1px dashed var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600}
+.addlong .ic{width:18px;height:18px}
+.addlong:disabled{opacity:.4}
+.accform{margin-top:12px}
+.accform input{margin-top:8px}
+.mgp input + input{margin-top:8px}
+
+/* ปุ่มบันทึก: วงหมุน / ✓ */
+.sb-busy,.sb-done{position:relative;color:transparent!important;pointer-events:none}
+.sb-busy>*,.sb-done>*{visibility:hidden}
+.sb-busy::after,.sb-done::after{content:"";position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px}
+.sb-busy,.sb-done{--sbc:var(--ink)}
+.pri.sb-busy,.pri.sb-done,.addrow button.sb-busy,.addrow button.sb-done{--sbc:var(--bg)}
+.dng.sb-busy,.dng.sb-done{--sbc:var(--warnink)}
+.sb-busy::after{border-radius:50%;border:2px solid var(--sbc);border-top-color:transparent;animation:sp .7s linear infinite}
+.sb-done::after{background:var(--sbc);-webkit-mask:url(../icons/check.svg) center/contain no-repeat;mask:url(../icons/check.svg) center/contain no-repeat;animation:pop .28s cubic-bezier(.2,.9,.3,1.4)}
+@keyframes pop{from{transform:scale(.4);opacity:0}}
+.sb-busy:disabled,.sb-done:disabled{opacity:1!important}
+
+/* แถวที่เพิ่งเพิ่ม/แก้ กะพริบ */
+.flash{animation:flash 1.6s ease-out;border-radius:12px}
+@keyframes flash{0%,25%{background:var(--csoft)}100%{background:transparent}}
+
+/* toast ผิดพลาด */
+.toast{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:60;max-width:528px;margin:0 auto;padding:12px 16px;border-radius:16px;background:#c0392b;color:#fff;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.2);animation:tin .24s cubic-bezier(.2,.8,.2,1)}
+.toast.out{animation:tout .2s ease-in forwards}
+@keyframes tin{from{transform:translateY(20px);opacity:0}}
+@keyframes tout{to{transform:translateY(20px);opacity:0}}
+
+/* ขยาย/หุบ */
+.xp{animation:xpin .22s cubic-bezier(.2,.8,.2,1)}
+.xpout{animation:xpout .17s ease-in forwards}
+@keyframes xpin{from{opacity:0;transform:translateY(-6px)}}
+@keyframes xpout{to{opacity:0;transform:translateY(-6px)}}
+
+/* กดปุ่ม/การ์ด: ยุบเล็กน้อยแล้วเด้งกลับ */
+button,.tap{transition:transform .14s ease,opacity .2s,background-color .2s;-webkit-tap-highlight-color:transparent}
+button:active:not(:disabled){transform:scale(.96)}
+.tap:active,.cashtile:active{transform:scale(.98)}
+.pko:active,.selbtn:active{transform:scale(.99)}
+
+/* แถบพลังวิ่ง */
+.bar i{transition:width .7s cubic-bezier(.2,.8,.2,1)}
+
+/* เปลี่ยนหน้า: View Transitions (Chrome) ไม่รองรับใช้แอนิเมชันเข้าแทน */
+::view-transition-old(root),::view-transition-new(root){animation-duration:.26s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
+html[data-nav="fwd"]::view-transition-new(root){animation-name:vin-r}
+html[data-nav="fwd"]::view-transition-old(root){animation-name:vout-l}
+html[data-nav="back"]::view-transition-new(root){animation-name:vin-l}
+html[data-nav="back"]::view-transition-old(root){animation-name:vout-r}
+@keyframes vin-r{from{transform:translateX(30%);opacity:0}}
+@keyframes vout-l{to{transform:translateX(-12%);opacity:0}}
+@keyframes vin-l{from{transform:translateX(-12%);opacity:0}}
+@keyframes vout-r{to{transform:translateX(30%);opacity:0}}
+@supports not (view-transition-name:none){#stream:not([hidden]),#settings:not([hidden]){animation:vin-r .24s cubic-bezier(.2,.8,.2,1)}}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after,::view-transition-old(root),::view-transition-new(root){animation:none!important;transition:none!important}
+  .sb-busy::after{animation:sp 1.2s linear infinite!important}
+}
