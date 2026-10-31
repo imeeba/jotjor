@@ -179,3 +179,16 @@ select{-webkit-appearance:none;appearance:none;padding-left:16px!important;paddi
 @keyframes skel{to{background-position:-200% 0}}
 @media (prefers-reduced-motion:reduce){.sk{animation:none}}
 .newver{display:block;width:100%;margin-top:12px;height:40px;border-radius:999px;border:0;background:var(--ink);color:var(--bg);font:inherit;font-weight:600}
+
+.tap{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.mini .go{position:absolute;top:14px;right:12px;width:16px;height:16px;opacity:.8}
+.cat.tap .crow{padding-bottom:2px}
+.dsub{padding:0 0 10px;font-size:12px}
+.cat.off{opacity:.45}
+.cat.on .cn{text-decoration:underline;text-underline-offset:3px}
+.accyc{padding:12px 0;border-bottom:1px solid var(--line);margin-bottom:4px}
+.accyc .addrow{margin-top:8px}
+.accadd{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.accadd .addrow{margin-top:8px}
+.addrow input.day{flex:none;width:96px}
+.cat.tap .crow{grid-template-columns:minmax(0,46%) 1fr auto}
