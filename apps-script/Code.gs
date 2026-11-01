@@ -424,14 +424,17 @@ function out_(obj) {
 
 function appendTx_(ss, dt, tx, app, raw) {
   const sh = ss.getSheetByName('Tx');
-  sh.appendRow([dt, fmt_(dt, 'yyyy-MM-dd'), tx.type, tx.direction, tx.amount, tx.merchant, tx.ref, app, raw, tx.tag || '']);
-  return sh.getLastRow();
+  const row = sh.getLastRow() + 1;
+  sh.getRange(row, COL.ref + 1).setNumberFormat('@');   // เก็บเลขอ้างอิงเป็นข้อความ ไม่ให้ 0030 กลายเป็น 30
+  sh.getRange(row, 1, 1, 10).setValues([[dt, fmt_(dt, 'yyyy-MM-dd'), tx.type, tx.direction, tx.amount, tx.merchant, String(tx.ref || ''), app, raw, tx.tag || '']]);
+  return row;
 }
 
 /* ---------- Parser ---------- */
 // รูปแบบข้อความของ K PLUS อาจเปลี่ยนได้ ให้ดูข้อความจริงในชีต Raw แล้วปรับ regex ตรงนี้
 
 const RE_SKIP = /OTP|รหัสผ่าน|รหัสยืนยัน|verification|โปรโมชั่น|สิทธิพิเศษ|เชิญชวน|คะแนน|point/i;
+const RE_SCHEDULED = /โอนเงินล่วงหน้า/;
 const RE_BALANCE_BEFORE = /(คงเหลือ|ยอดคงเหลือ|เหลือ|balance|avail|วงเงิน(?:คงเหลือ)?|ใช้ได้)\s*[:：]?\s*(?:บาท|THB|฿)?\s*$/i;
 const RE_IN = /เงินเข้า|รับโอน|รับเงิน|ฝากเงิน|เข้าบัญชี|received|incoming|deposit|refund|คืนเงิน|ยกเลิกรายการ|reversal/i;
 const RE_OUT = /เงินออก|ถอน|โอน|จ่าย|ชำระ|ใช้จ่าย|ใช้บัตร|หัก|ซื้อ|รูด|paid|payment|purchase|spend|spent|withdraw|transfer|debit/i;
@@ -484,6 +487,8 @@ function parse_(raw, ref) {
   }
 
   if (!s || RE_SKIP.test(s)) return null;
+  // แจ้งเตือนโอนล่วงหน้าไม่มีเวลาและบอกบัญชีปลายทาง ธนาคารส่ง "รายการโอน/ถอน" ของรายการเดียวกันตามมา → ไม่นับ กันซ้ำ
+  if (RE_SCHEDULED.test(s)) return null;
 
   const amount = pickAmount_(s);
   if (amount === null || amount <= 0) return null;
@@ -590,7 +595,7 @@ function untaggedRows_(ss) {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if ((r[COL.type] === 'credit' || r[COL.type] === 'deposit') && r[COL.dir] === 'out' && !r[COL.tag]) {
-      list.push({ row: i + 1, dt: r[COL.dt], amount: Number(r[COL.amount]), merchant: r[COL.merchant], ref: r[COL.ref] });
+      list.push({ row: i + 1, dt: r[COL.dt], amount: Number(r[COL.amount]), merchant: r[COL.merchant], ref: refStr_(r[COL.ref]) });
     }
   }
   return list;
@@ -600,11 +605,18 @@ function getTx_(ss, row) {
   const sh = ss.getSheetByName('Tx');
   if (row < 2 || row > sh.getLastRow()) return null;
   const r = sh.getRange(row, 1, 1, TX_HEADERS.length).getValues()[0];
-  return { row: row, dt: r[COL.dt], amount: Number(r[COL.amount]), merchant: r[COL.merchant], ref: r[COL.ref], tag: r[COL.tag] };
+  return { row: row, dt: r[COL.dt], amount: Number(r[COL.amount]), merchant: r[COL.merchant], ref: refStr_(r[COL.ref]), tag: r[COL.tag] };
 }
 
 /* ---------- โอนระหว่างบัญชีตัวเอง → แท็ก "ข้าม" ---------- */
 // K PLUS แจ้ง "โอนออก" จากบัญชีหนึ่ง และ "เงินเข้า" อีกบัญชีหนึ่ง ยอดเท่ากันในเวลาไล่เลี่ยกัน → จับคู่แล้วข้ามทั้งคู่
+
+/** เลขอ้างอิงสำหรับแสดงผล: แถวเก่าที่ชีตเก็บเป็นตัวเลข (เช่น 30) เติม 0 ข้างหน้าให้ครบ 4 หลัก */
+function refStr_(v) {
+  if (v === '' || v == null) return '';
+  const s = String(v);
+  return typeof v === 'number' && s.length < 4 ? ('0000' + s).slice(-4) : s;
+}
 
 function refNorm_(v) {
   const n = parseInt(String(v), 10);
@@ -1030,7 +1042,7 @@ function suggestRefunds_(rows, mt, nowMs) {
     if (r[COL.type] !== 'deposit' || !r[COL.dt] || r[COL.tag] === SKIP_TAG) continue;
     const ref = refNorm_(r[COL.ref]);
     if (!ref) continue;
-    const o = { row: i + 1, at: new Date(r[COL.dt]).getTime(), amt: round2_(r[COL.amount]), ref: ref, key: txKey_(r),
+    const o = { row: i + 1, at: new Date(r[COL.dt]).getTime(), amt: round2_(r[COL.amount]), ref: ref, show: refStr_(r[COL.ref]), key: txKey_(r),
                 merchant: r[COL.merchant] ? String(r[COL.merchant]) : '', tag: r[COL.tag] ? String(r[COL.tag]) : '' };
     if (r[COL.dir] === 'out') { if (!mt.usedOut[o.key]) outs.push(o); }
     else if (r[COL.dir] === 'in' && !mt.link[o.key] && !mt.rejected[o.key] && nowMs - o.at <= MATCH_LOOKBACK_MS) ins.push(o);
@@ -1047,7 +1059,7 @@ function suggestRefunds_(rows, mt, nowMs) {
     });
     if (!best) return;
     taken[best.row] = true;
-    list.push({ inRow: n.row, outRow: best.row, inKey: n.key, outKey: best.key, amount: n.amt, ref: n.ref,
+    list.push({ inRow: n.row, outRow: best.row, inKey: n.key, outKey: best.key, amount: n.amt, ref: n.show,
                 inAt: n.at, outAt: best.at, outMerchant: best.merchant, outTag: best.tag });
   });
   return list;
@@ -1169,7 +1181,7 @@ function dashData_(offset) {
     if (tag !== SKIP_TAG && v) addSub_(subsAll, sp, v);
     if (!inCycle) continue;
     const merchant = r[COL.merchant] ? String(r[COL.merchant]) : '';
-    const ref = r[COL.ref] === '' ? '' : String(r[COL.ref]);
+    const ref = refStr_(r[COL.ref]);
     list.push({ row: i + 1, at: dt.getTime(), stream: stream, dir: dir, amount: amt, merchant: merchant, ref: ref, tag: tag, linked: linked });
     if (dir === 'in' && tag !== SKIP_TAG && !linked) {
       if (stream === 'transfer') { income.account += amt; income.accountCount++; }
@@ -1262,7 +1274,7 @@ function streamData_(stream, offset) {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r[COL.dt] || r[COL.type] !== type) continue;
-    const ref = r[COL.ref] === '' ? '' : String(r[COL.ref]);
+    const ref = refStr_(r[COL.ref]);
     const k = refNorm_(ref);
     let g = groups[k];
     if (!g) { g = groups[k] = { key: k, name: '', last4: ref, known: false, b: app, total: 0, count: 0, items: 0 }; order.push(k); }
@@ -1779,6 +1791,7 @@ function testParse() {
   [
     'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 20.00 บาท ที่ SHOPEE *SHOPEE',
     'รายการโอน/ถอน บัญชี xxx-x-x5855-x จำนวนเงิน 1.00 บาท วันที่ 27 ต.ค. 69 00:16 น.',
+    'รายการโอนเงินล่วงหน้าสำเร็จ โอนให้บัญชี xxx-x-x0030-x จำนวนเงิน 1.00 บาท',
     'รายการเงินเข้า บัญชี xxx-x-x9024-x จำนวนเงิน 1.00 บาท วันที่ 27 ต.ค. 69 00:16 น.',
     'ชำระ=THB9,816.00 SHOPEE. OTP=211264(DTGW) ห้ามเปิดเผย OTP',
     'รหัส OTP ของคุณคือ 123456'
