@@ -184,7 +184,6 @@ select{-webkit-appearance:none;appearance:none;padding-left:16px!important;paddi
 .cat.tap .crow{padding-bottom:2px}
 .dsub{padding:0 0 10px;font-size:12px}
 .cat.off{opacity:.45}
-.cat.on .cn{text-decoration:underline;text-underline-offset:3px}
 .accyc{padding:12px 0;border-bottom:1px solid var(--line);margin-bottom:4px}
 .accyc .addrow{margin-top:8px}
 .accadd{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
