@@ -84,7 +84,8 @@ details.card summary{font-weight:600;cursor:pointer}
 .cf button:disabled{opacity:.4}
 .sg{padding:12px 0;border-top:1px solid var(--line)}
 .sg:first-of-type{border-top:0;padding-top:0}
-.sg .btns{display:flex;gap:8px;margin-top:10px}
+.sg .btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.sg .btns .full{flex-basis:100%}
 .sg .btns button{flex:1;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
 .sg .btns .pri{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:600}
 .sg .btns button:disabled{opacity:.4}
@@ -354,7 +355,7 @@ html[data-nav="back"]::view-transition-old(root){animation-name:vout-r}
 
 /* ฟอร์มเงินสด */
 .cf input{height:46px;font-size:16px}
-.cf .whenbtn{height:46px;margin-top:8px;font-size:16px}
+.cf .whenbtn,.cf .selbtn{height:46px;margin-top:8px;font-size:16px}
 .cf .whenbtn .ic{width:18px;height:18px}
 .cf .pri{height:48px;margin-top:14px}
 
