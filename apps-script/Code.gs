@@ -387,6 +387,7 @@ function doPost(e) {
     const tx = parse_(text, now);
     if (!tx) return out_({ ok: true, parsed: false });
     const when = tx.when || now;                      // ใช้เวลาในข้อความ ถ้ามี
+    if (!fxToThb_(ss, tx, when)) return out_({ ok: true, parsed: false, fxPending: true });   // หาอัตราแลกเปลี่ยนไม่ได้: Raw เก็บแล้ว รัน reparseAll ภายหลัง
     if (isDuplicate_(ss, tx, when)) return out_({ ok: true, duplicate: true });
 
     tx.tag = autoTag_(ss, tx.merchant + ' ' + text);
@@ -504,7 +505,83 @@ function parse_(raw, ref) {
   if (type === 'card_payment') direction = 'transfer';
 
   return { type: type, direction: direction, amount: amount, merchant: pickMerchant_(s), ref: pickRef_(s),
-           when: parseWhen_(s, ref || new Date()) };
+           when: parseWhen_(s, ref || new Date()), ccy: pickCcy_(s, amount) };
+}
+
+/** สกุลเงินต่างประเทศหลังตัวเลข เช่น "จำนวนเงิน 8.99 USD" → 'USD' (THB หรือไม่มี = '') */
+function pickCcy_(s, amount) {
+  const re = /([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\.([0-9]{2})\s*([A-Z]{3})(?![A-Za-z])/g;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    if (Number((m[1] + '.' + m[2]).replace(/,/g, '')) !== amount) continue;
+    return m[3] === 'THB' ? '' : m[3];
+  }
+  return '';
+}
+
+/* ---------- สกุลเงินต่างประเทศ → บาท ---------- */
+// ข้อความ KBank บอกแค่ "8.99 USD" ไม่มียอดบาท จึงแปลงด้วยอัตรากลางของวันที่ทำรายการ (Frankfurter) แล้วปัดเป็นบาทเต็ม
+// เก็บอัตราในชีต Rates (date, ccy, rate, fetched_at) เพื่อให้ reparseAll ได้ยอดเท่าเดิมทุกครั้ง  Raw ไม่ถูกแก้
+const RATES_HEADERS = ['date', 'ccy', 'rate', 'fetched_at'];
+let RATES_CACHE_ = null;
+
+function ratesMap_(ss) {
+  if (RATES_CACHE_) return RATES_CACHE_;
+  const m = {};
+  const sh = ss.getSheetByName('Rates');
+  if (sh && sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues().forEach(r => {
+      const d = r[0] instanceof Date ? fmt_(r[0], 'yyyy-MM-dd') : String(r[0]);
+      if (d && r[1] && Number(r[2]) > 0) m[d + '|' + r[1]] = Number(r[2]);
+    });
+  }
+  RATES_CACHE_ = m;
+  return m;
+}
+
+function fetchRate_(date, ccy) {
+  const urls = [
+    'https://api.frankfurter.dev/v1/' + date + '?base=' + ccy + '&symbols=THB',
+    'https://api.frankfurter.app/' + date + '?from=' + ccy + '&to=THB'
+  ];
+  for (let i = 0; i < urls.length; i++) {
+    try {
+      const res = UrlFetchApp.fetch(urls[i], { muteHttpExceptions: true });
+      if (res.getResponseCode() !== 200) continue;
+      const r = JSON.parse(res.getContentText()).rates;
+      if (r && Number(r.THB) > 0) return Number(r.THB);
+    } catch (err) { console.error(err); }
+  }
+  return null;
+}
+
+/** อัตรา ccy→THB ของวันที่ date (yyyy-MM-dd) ใช้ที่เก็บไว้ก่อน ไม่มีค่อยดึง ดึงไม่ได้ใช้อัตราที่เก็บไว้ล่าสุดของสกุลนั้น (ไม่มีเลย = null) */
+function rateFor_(ss, ccy, date) {
+  const m = ratesMap_(ss);
+  const key = date + '|' + ccy;
+  if (m[key]) return m[key];
+  const got = fetchRate_(date, ccy);
+  if (got) {
+    ensureSheet_(ss, 'Rates', RATES_HEADERS).appendRow([date, ccy, got, new Date()]);
+    m[key] = got;
+    return got;
+  }
+  let best = null;
+  Object.keys(m).forEach(k => {
+    if (k.split('|')[1] !== ccy) return;
+    if (!best || k.slice(0, 10) > best.slice(0, 10)) best = k;
+  });
+  return best ? m[best] : null;
+}
+
+/** แปลง tx.amount เป็นบาทเต็มถ้า tx.ccy เป็นสกุลต่างประเทศ คืน false เมื่อหาอัตราไม่ได้ (ยังไม่ควรบันทึก) */
+function fxToThb_(ss, tx, when) {
+  if (!tx.ccy) return true;
+  const rate = rateFor_(ss, tx.ccy, fmt_(when, 'yyyy-MM-dd'));
+  if (!rate) return false;
+  tx.foreign = tx.amount;
+  tx.amount = Math.max(1, Math.round(tx.amount * rate));
+  return true;
 }
 
 // เงินสดจากฟอร์มบนหน้าเว็บ (app = manual): "รายการเงินสดจ่าย จำนวนเงิน 120.00 บาท ที่ ร้านข้าว วันที่ 29/10/69 12:30 น."
@@ -547,7 +624,7 @@ function pickAmount_(s) {
 }
 
 function pickMerchant_(s) {
-  const m = s.match(/(?:ร้านค้า|ร้าน|(?<!วัน)ที่|merchant|\bat\b|@)\s*[:：]?\s*([A-Za-z0-9ก-๙&'’.\-\/* ]{2,40}?)(?=\s*(?:จำนวน|ยอด|เมื่อ|วันที่|เวลา|คงเหลือ|วงเงิน|[0-9]{1,2}[\/\-.][0-9]{1,2}|[0-9][0-9,]*\.[0-9]{2}|THB|บาท|$))/i);
+  const m = s.match(/(?:ร้านค้า|ร้าน|(?<!วัน)ที่|merchant|\bat\b|@)\s*[:：]?\s*([A-Za-z0-9ก-๙&'’._\-\/* ]{2,40}?)(?=\s*(?:จำนวน|ยอด|เมื่อ|วันที่|เวลา|คงเหลือ|วงเงิน|[0-9]{1,2}[\/\-.][0-9]{1,2}|[0-9][0-9,]*\.[0-9]{2}|THB|บาท|$))/i);
   return m ? m[1].trim() : '';
 }
 
@@ -764,7 +841,7 @@ function dashData(key, offset, fresh) {
 /** หน้าลงลึกของการ์ด stream = 'credit' | 'transfer' */
 function streamData(key, stream, offset, fresh) {
   checkKey_(key);
-  if (stream !== 'credit' && stream !== 'transfer') throw new Error('bad stream');
+  if (stream !== 'credit' && stream !== 'transfer' && stream !== 'cash') throw new Error('bad stream');
   offset = Number(offset) || 0;
   return cached_('st_' + stream + '_' + offset, fresh, () => streamData_(stream, offset));
 }
@@ -1287,7 +1364,8 @@ function streamData_(stream, offset) {
   const now = new Date();
   const app = cycleBounds_(now, offset);
   const groups = {}, order = [];
-  accounts_().filter(a => a.kind === (stream === 'credit' ? 'credit' : 'bank')).forEach(a => {
+  const cash = { out: 0, outCount: 0, in: 0, inCount: 0 };   // เงินสดไม่มีบัญชี: มีแค่ยอดจ่าย/รับของรอบ
+  (stream === 'cash' ? [] : accounts_().filter(a => a.kind === (stream === 'credit' ? 'credit' : 'bank'))).forEach(a => {
     const k = refNorm_(a.last4.replace(/\D/g, '').slice(-4));
     if (!k || groups[k]) return;
     groups[k] = { key: k, name: a.name === accName_(a.kind, a.last4) ? '' : a.name, last4: a.last4, known: true, b: app, total: 0, count: 0, items: 0 };
@@ -1299,7 +1377,7 @@ function streamData_(stream, offset) {
   if (mt) rows.forEach((r, i) => {
     if (i && r[COL.type] === 'deposit' && r[COL.dir] === 'out' && r[COL.dt]) outTagByKey[txKey_(r)] = r[COL.tag] ? String(r[COL.tag]) : '';
   });
-  const type = stream === 'credit' ? 'credit' : 'deposit';
+  const type = stream === 'credit' ? 'credit' : (stream === 'cash' ? 'cash' : 'deposit');
   const list = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -1321,6 +1399,9 @@ function streamData_(stream, offset) {
     list.push({ row: i + 1, at: dt.getTime(), stream: stream, dir: dir, amount: amt, merchant: r[COL.merchant] ? String(r[COL.merchant]) : '',
                 ref: ref, tag: tag, linked: linked, acct: k });
     g.items++;
+    if (stream === 'cash' && tag !== SKIP_TAG && amt) {
+      if (dir === 'out') { cash.out += amt; cash.outCount++; } else if (dir === 'in') { cash.in += amt; cash.inCount++; }
+    }
     if (tag === SKIP_TAG || !v) continue;
     g.total += v;
     if (v > 0) g.count++;
@@ -1329,9 +1410,10 @@ function streamData_(stream, offset) {
   return {
     now: now.getTime(), stream: stream,
     cycle: { start: app.start.getTime(), end: app.end.getTime(), offset: offset || 0 },
-    accts: order.map(k => groups[k]).filter(g => g.known || g.items)
+    accts: stream === 'cash' ? [] : order.map(k => groups[k]).filter(g => g.known || g.items)
       .map(g => ({ key: g.key, name: g.name, last4: g.last4, known: g.known, start: g.b.start.getTime(), end: g.b.end.getTime(),
                    total: round2_(g.total), count: g.count })),
+    cash: stream === 'cash' ? { out: round2_(cash.out), outCount: cash.outCount, in: round2_(cash.in), inCount: cash.inCount } : null,
     list: list
   };
 }
@@ -1806,6 +1888,7 @@ function reparseAll() {
     const p = parseApp_(text, rec, r[1]);
     if (!p) return;
     const when = p.when || rec;
+    if (!fxToThb_(ss, p, when)) { console.error('no FX rate, skipped: ' + text); return; }
     if (r[1] !== 'manual' && isDuplicate_(ss, p, when)) return;
     seen2[text] = (seen2[text] || 0) + 1;
     p.tag = keep[text + '#' + seen2[text]] || autoTag_(ss, p.merchant + ' ' + text);
@@ -1824,6 +1907,7 @@ function testParse() {
     'รายการโอนเงินล่วงหน้าสำเร็จ โอนให้บัญชี xxx-x-x0030-x จำนวนเงิน 1.00 บาท',
     'รายการเงินเข้า บัญชี xxx-x-x9024-x จำนวนเงิน 1.00 บาท วันที่ 27 ต.ค. 69 00:16 น.',
     'ชำระ=THB9,816.00 SHOPEE. OTP=211264(DTGW) ห้ามเปิดเผย OTP',
+    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 8.99 USD ที่ Google Workspace_tamada.i',
     'รหัส OTP ของคุณคือ 123456'
   ].forEach(s => {
     const p = parse_(s, new Date());

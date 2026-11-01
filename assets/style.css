@@ -491,3 +491,7 @@ html[data-nav="back"]::view-transition-old(root){animation-name:vout-r}
 #main .wrap,#main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
 .cashtile{position:relative}
 .cashtile .go{position:absolute;top:18px;right:12px;width:16px;height:16px;opacity:.8}
+
+.item .skipb{grid-column:1/-1;margin-top:6px;height:38px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;padding:0 8px}
+.item .skipb.on{background:var(--pill)}
+.cbig{font-size:26px;font-weight:700;letter-spacing:-.8px;font-variant-numeric:tabular-nums}

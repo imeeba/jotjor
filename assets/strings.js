@@ -190,6 +190,10 @@ window.STRINGS = {
   'drill.cardRef': '{ref}',
   'drill.acctRef': '{ref}',
   'drill.count': '{n} รายการ',
+  'drill.cashOut': 'เงินสดจ่ายรอบนี้',
+  'drill.cashIn': 'เงินสดรับรอบนี้',
+  'skip.on': 'ข้าม (ไม่นับเป็นรายรับ)',
+  'skip.off': 'ยกเลิกข้าม',
   'drill.pickHint': 'แตะแถวเพื่อดูเฉพาะใบนั้น แตะอีกครั้งเพื่อดูทั้งหมด',
 
   'acc.title': 'บัญชีและบัตร',
