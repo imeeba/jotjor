@@ -3,7 +3,7 @@
 (function () {
 'use strict';
 
-var APP_VER = '0.10.0';   // SemVer หลัก.รอง.แก้ไข: ฟีเจอร์ใหม่ขึ้นตัวกลาง แก้บั๊กขึ้นตัวท้าย; 1.0.0 = เปิดเผยแพร่พร้อม tutorial
+var APP_VER = '0.11.0';   // SemVer หลัก.รอง.แก้ไข: ฟีเจอร์ใหม่ขึ้นตัวกลาง แก้บั๊กขึ้นตัวท้าย; 1.0.0 = เปิดเผยแพร่พร้อม tutorial
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey', LS_CACHE = 'jotjor_cache';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
@@ -802,11 +802,13 @@ function streamCard(cls, label, s, stream) {
 
 function cashTile(d) {
   var k = d.cash, p = d.total.total > 0 ? Math.max(0, Math.min(100, k.total / d.total.total * 100)) : 0;
-  return '<button type="button" class="card cashtile" onclick="openCash()" aria-label="' + esc(t('cash.add')) + '"><div class="lab">' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
+  return '<button type="button" class="card cashtile" onclick="openOv(\'out\',\'k\')" aria-label="' + esc(t('ov.open')) + '"><i class="ic ic-next go"></i><div class="lab">' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
     + '<div class="foot"><div class="bar c"><i style="width:' + p.toFixed(1) + '%"></i></div>'
     + '<div class="cp"><span>' + p.toFixed(0) + '%</span></div></div></button>';
 }
 function openCash() { sheetOpen('sheet'); cashMsg(''); }
+/** ปุ่ม + ลอย: เปิดหน้าเพิ่มรายการเอง เริ่มโหมดตามแท็บ (รายจ่าย = จ่ายเงินสด, รายรับ = รับเงินสด) */
+function fabGo() { cashDir(tab === 'in' ? 'in' : 'out'); openCash(); }
 function closeCash(cb) { sheetClose('sheet', cb); }
 window.openCash = openCash;
 
@@ -889,9 +891,9 @@ function suggestBlock(d) {
 function incomeBlock(d) {
   var n = d.income;
   var h = '<section class="card tap inhero" role="button" tabindex="0" onclick="openOv(\'in\')" aria-label="' + esc(t('ov.open')) + '"><i class="ic ic-next go"></i><div class="lab">' + t('income.label') + '</div><div class="big">' + money(n.total) + '<span>' + t('unit.baht') + '</span></div><div class="split">';
-  h += '<div class="mini n"><div class="lab">' + t('income.account') + '</div><div class="num">' + money(n.account) + '</div><div class="sub">' + t('income.count', { n: n.accountCount }) + '</div></div>';
-  h += '<div class="mini n"><div class="lab">' + t('income.cash') + '</div><div class="num">' + money(n.cash) + '</div><div class="sub">' + t('income.count', { n: n.cashCount }) + '</div></div>';
-  h += '<div class="mini k"><div class="lab">' + t('income.card') + '</div><div class="num">' + money(n.card) + '</div>';
+  h += '<div class="mini n tap" role="button" tabindex="0" onclick="event.stopPropagation();openOv(\'in\',\'a\')"><div class="lab">' + t('income.account') + '</div><div class="num">' + money(n.account) + '</div><div class="sub">' + t('income.count', { n: n.accountCount }) + '</div></div>';
+  h += '<div class="mini n tap" role="button" tabindex="0" onclick="event.stopPropagation();openOv(\'in\',\'k\')"><div class="lab">' + t('income.cash') + '</div><div class="num">' + money(n.cash) + '</div><div class="sub">' + t('income.count', { n: n.cashCount }) + '</div></div>';
+  h += '<div class="mini k tap" role="button" tabindex="0" onclick="event.stopPropagation();openOv(\'in\',\'c\')"><div class="lab">' + t('income.card') + '</div><div class="num">' + money(n.card) + '</div>';
   h += '<div class="sub">' + t('income.cardNote', { n: n.cardCount }) + '</div></div>';
   return h + '</div></section>';
 }
@@ -1205,8 +1207,8 @@ var OV = { offset: 0, data: null, tab: 'out', mode: 'day', type: '', cat: '', se
 var DAY = 86400000;
 var fMon = new Intl.DateTimeFormat('th-TH', { month: 'short', timeZone: BK });
 
-function openOv(tb) {
-  OV.tab = tb === 'in' ? 'in' : 'out'; OV.offset = offset; OV.data = null; OV.type = ''; OV.cat = ''; OV.sel = -1; OV.selM = 5;
+function openOv(tb, type) {
+  OV.tab = tb === 'in' ? 'in' : 'out'; OV.offset = offset; OV.data = null; OV.type = type || ''; OV.cat = ''; OV.sel = -1; OV.selM = 5;
   openSub('ov'); renderOv(); loadOv();
 }
 function loadOv(fresh) {
@@ -1519,6 +1521,7 @@ $('rf').onclick = function () { load(true); };   // ปุ่มรีเฟร�
 $('cout').onclick = function () { cashDir('out'); };
 $('cin').onclick = function () { cashDir('in'); };
 $('ctx').onclick = function () { cashDir('tx'); };
+$('fab').onclick = fabGo;
 $('cgo').onclick = cashGo;
 $('cashClose').onclick = function () { closeCash(); }; $('sheetbg').onclick = function () { closeCash(); };
 $('tabOut').onclick = function () { if (tab !== 'out') animMain = true; tab = 'out'; if (DATA) render(); };
