@@ -483,3 +483,11 @@ html[data-nav="back"]::view-transition-old(root){animation-name:vout-r}
 .ablic{margin-top:10px}
 @supports not (view-transition-name:none){#about:not([hidden]){animation:vin-r .24s cubic-bezier(.2,.8,.2,1)}}
 .nw{white-space:nowrap}
+
+/* ปุ่ม + ลอย (หน้าหลัก): เพิ่มรายการเอง */
+.fab{position:fixed;right:max(16px,calc(50% - 264px));bottom:calc(20px + env(safe-area-inset-bottom));z-index:25;width:56px;height:56px;border-radius:50%;border:0;background:var(--ink);color:var(--bg);box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.fab .ic{width:26px;height:26px}
+.fab:active{transform:scale(.94)}
+#main .wrap,#main{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+.cashtile{position:relative}
+.cashtile .go{position:absolute;top:18px;right:12px;width:16px;height:16px;opacity:.8}
