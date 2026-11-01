@@ -3,7 +3,7 @@
 (function () {
 'use strict';
 
-var APP_VER = '0.11.0';   // SemVer หลัก.รอง.แก้ไข: ฟีเจอร์ใหม่ขึ้นตัวกลาง แก้บั๊กขึ้นตัวท้าย; 1.0.0 = เปิดเผยแพร่พร้อม tutorial
+var APP_VER = '0.12.0';   // SemVer หลัก.รอง.แก้ไข: ฟีเจอร์ใหม่ขึ้นตัวกลาง แก้บั๊กขึ้นตัวท้าย; 1.0.0 = เปิดเผยแพร่พร้อม tutorial
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey', LS_CACHE = 'jotjor_cache';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
@@ -391,8 +391,28 @@ function patchStreamTag(row, nt) {
   if (!x || x.linked || x.tag === nt) return;
   var g = sd.accts.filter(function (a) { return a.key === x.acct; })[0], v = spendOf(x);
   if (g) g.total += (nt === SKIP ? 0 : v) - (x.tag === SKIP ? 0 : v);
+  if (sd.cash && x.stream === 'cash') {   // ยอดรวมหน้าเงินสด: ข้าม = ไม่นับ
+    var k = x.dir === 'out' ? 'out' : 'in', dn = (nt === SKIP ? 0 : 1) - (x.tag === SKIP ? 0 : 1);
+    sd.cash[k] += dn * x.amount; sd.cash[k + 'Count'] += dn;
+  }
   x.tag = nt;
 }
+
+/** ปุ่ม "ข้าม" ของเงินเข้า (เช่น โอนจากบัญชีตัวเองที่ไม่มีแจ้งเตือนฝั่งโอนออก): ไม่นับเป็นรายรับ กดซ้ำเพื่อยกเลิก */
+function patchSkip(d, row, on) {
+  var x = d.recent.filter(function (r) { return r.row === row; })[0];
+  var nt = on ? SKIP : '';
+  if (!x || x.linked || x.tag === nt) return;
+  var key = x.stream === 'transfer' ? 'account' : (x.stream === 'credit' ? 'card' : 'cash'), dn = on ? -1 : (x.tag === SKIP ? 1 : 0);
+  d.income[key] += dn * x.amount; d.income[key + 'Count'] += dn; d.income.total += dn * x.amount;
+  x.tag = nt;
+}
+function setSkip(row, on) {
+  flashK = 'r' + row;
+  var nt = on ? SKIP : '';
+  optimistic(function (d) { patchSkip(d, row, on); patchStreamTag(row, nt); }, function () { return api('setTag', [row, nt]); }, 'tag.saveFail');
+}
+window.setSkip = setSkip;
 
 function setTag(row, sel) {
   var nt = sel.value;
@@ -802,7 +822,7 @@ function streamCard(cls, label, s, stream) {
 
 function cashTile(d) {
   var k = d.cash, p = d.total.total > 0 ? Math.max(0, Math.min(100, k.total / d.total.total * 100)) : 0;
-  return '<button type="button" class="card cashtile" onclick="openOv(\'out\',\'k\')" aria-label="' + esc(t('ov.open')) + '"><i class="ic ic-next go"></i><div class="lab">' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
+  return '<button type="button" class="card cashtile" onclick="openStream(\'cash\',\'out\')" aria-label="' + esc(t('drill.open')) + '"><i class="ic ic-next go"></i><div class="lab">' + esc(t('card.cash')) + '</div><div class="num">' + money(k.total) + '</div>'
     + '<div class="foot"><div class="bar c"><i style="width:' + p.toFixed(1) + '%"></i></div>'
     + '<div class="cp"><span>' + p.toFixed(0) + '%</span></div></div></button>';
 }
@@ -892,7 +912,7 @@ function incomeBlock(d) {
   var n = d.income;
   var h = '<section class="card tap inhero" role="button" tabindex="0" onclick="openOv(\'in\')" aria-label="' + esc(t('ov.open')) + '"><i class="ic ic-next go"></i><div class="lab">' + t('income.label') + '</div><div class="big">' + money(n.total) + '<span>' + t('unit.baht') + '</span></div><div class="split">';
   h += '<div class="mini n tap" role="button" tabindex="0" onclick="event.stopPropagation();openOv(\'in\',\'a\')"><div class="lab">' + t('income.account') + '</div><div class="num">' + money(n.account) + '</div><div class="sub">' + t('income.count', { n: n.accountCount }) + '</div></div>';
-  h += '<div class="mini n tap" role="button" tabindex="0" onclick="event.stopPropagation();openOv(\'in\',\'k\')"><div class="lab">' + t('income.cash') + '</div><div class="num">' + money(n.cash) + '</div><div class="sub">' + t('income.count', { n: n.cashCount }) + '</div></div>';
+  h += '<div class="mini n tap" role="button" tabindex="0" onclick="event.stopPropagation();openStream(\'cash\',\'in\')"><div class="lab">' + t('income.cash') + '</div><div class="num">' + money(n.cash) + '</div><div class="sub">' + t('income.count', { n: n.cashCount }) + '</div></div>';
   h += '<div class="mini k tap" role="button" tabindex="0" onclick="event.stopPropagation();openOv(\'in\',\'c\')"><div class="lab">' + t('income.card') + '</div><div class="num">' + money(n.card) + '</div>';
   h += '<div class="sub">' + t('income.cardNote', { n: n.cardCount }) + '</div></div>';
   return h + '</div></section>';
@@ -953,6 +973,9 @@ function recentList(d, list, page, PER, goFn) {
       h += '<select data-title="' + esc(t('tag.pickTitle')) + '" class="' + (x.tag ? '' : 'un') + '"' + (x.row ? '' : ' disabled') + ' onchange="setTag(' + Number(x.row) + ',this)"><option value="" data-ph>' + t('tag.pick') + '</option>';
       h += tagOpts(d, x.tag);
       h += '</select>';
+    } else if (!spend && !refund && !x.linked && d) {
+      var sk = x.tag === SKIP;
+      h += '<button type="button" class="skipb' + (sk ? ' on' : '') + '"' + (x.row ? '' : ' disabled') + ' onclick="setSkip(' + Number(x.row) + ',' + (sk ? 0 : 1) + ')">' + t(sk ? 'skip.off' : 'skip.on') + '</button>';
     }
     h += '</div>';
   });
@@ -963,8 +986,8 @@ function recentList(d, list, page, PER, goFn) {
 
 /* ---------- หน้าลงลึกของการ์ด: สัดส่วนแต่ละบัตร/บัญชี + รายการล่าสุดเฉพาะประเภทนั้น ---------- */
 
-function openStream(s) {
-  ST = { stream: s, offset: offset, data: null, page: 0, acct: null }; animSt = true;
+function openStream(s, dir) {
+  ST = { stream: s, dir: dir || 'out', offset: offset, data: null, page: 0, acct: null }; animSt = true;
   openSub('stream'); renderStream(); loadStream();
 }
 function loadStream(fresh) {
@@ -989,8 +1012,8 @@ function acctName(g, credit) {
 }
 
 function renderStream() {
-  var credit = ST.stream === 'credit', sd = ST.data;
-  $('sttitle').innerHTML = icons(esc(t(credit ? 'card.credit' : 'card.transfer')));
+  var credit = ST.stream === 'credit', cashS = ST.stream === 'cash', sd = ST.data;
+  $('sttitle').innerHTML = icons(esc(t(cashS ? 'card.cash' : (credit ? 'card.credit' : 'card.transfer'))));
   $('stnext').disabled = ST.offset >= 0;
   if (!sd) {
     $('stcyc').innerHTML = '&nbsp;'; $('stupd').innerHTML = '&nbsp;';
@@ -1004,8 +1027,13 @@ function renderStream() {
 
   var total = 0;
   groups.forEach(function (g) { if (g.total > 0) total += g.total; });
-  var h = '<section class="card"><div class="chead"><h2>' + t(credit ? 'drill.shareCredit' : 'drill.shareTransfer') + '</h2><span class="ctl"><button class="rb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
-  if (!groups.length) h += '<div class="sub">' + t('cat.empty') + '</div>';
+  var h = '';
+  if (cashS) {   // เงินสดไม่มีบัญชี: แสดงยอดรวมของรอบตามทิศทางที่กดมา แล้วตามด้วยรายการล่าสุด
+    var cin = ST.dir === 'in', cs = sd.cash || { out: 0, outCount: 0, in: 0, inCount: 0 };
+    h = '<section class="card"><div class="chead"><h2>' + t(cin ? 'drill.cashIn' : 'drill.cashOut') + '</h2></div><div class="num cbig">' + money(cin ? cs.in : cs.out) + '</div>'
+      + '<div class="sub dsub">' + t('drill.count', { n: cin ? cs.inCount : cs.outCount }) + '</div></section>';
+  } else h = '<section class="card"><div class="chead"><h2>' + t(credit ? 'drill.shareCredit' : 'drill.shareTransfer') + '</h2><span class="ctl"><button class="rb" onclick="toggleCat()" aria-label="' + esc(t('cat.toggle')) + '">' + (catAmt ? '฿' : '%') + '</button></span></div>';
+  if (!groups.length && !cashS) h += '<div class="sub">' + t('cat.empty') + '</div>';
   groups.forEach(function (g) {
     var p = total > 0 ? Math.max(0, g.total) / total * 100 : 0;
     h += '<div class="cat tap' + (sel ? (sel === g ? ' on' : ' off') : '') + '" role="button" tabindex="0" onclick="stPick(\'' + esc(g.key) + '\')"><div class="crow">'
@@ -1014,10 +1042,15 @@ function renderStream() {
       + '<span class="cv">' + (catAmt ? money(g.total) : p.toFixed(0) + '%') + '</span></div>'
       + '<div class="sub dsub">' + t('drill.count', { n: g.count }) + '</div></div>';
   });
-  if (groups.length > 1) h += '<div class="sub" style="margin-top:8px">' + t('drill.pickHint') + '</div>';
-  h += '</section>';
+  if (!cashS) {
+    if (groups.length > 1) h += '<div class="sub" style="margin-top:8px">' + t('drill.pickHint') + '</div>';
+    h += '</section>';
+  }
 
-  var list = sortList(sd.list.filter(function (x) { return (x.dir === 'out' || x.stream === 'credit') && (!ST.acct || x.acct === ST.acct); }));
+  var list = sortList(sd.list.filter(function (x) {
+    if (cashS) return x.dir === ST.dir;
+    return (x.dir === 'out' || x.stream === 'credit') && (!ST.acct || x.acct === ST.acct);
+  }));
   var PER = 10, pages = Math.max(1, Math.ceil(list.length / PER));
   ST.page = Math.min(ST.page, pages - 1);
   h += recentList(DATA, list, ST.page, PER, 'stGo');
