@@ -510,8 +510,16 @@ function parse_(raw, ref) {
 // เงินสดจากฟอร์มบนหน้าเว็บ (app = manual): "รายการเงินสดจ่าย จำนวนเงิน 120.00 บาท ที่ ร้านข้าว วันที่ 29/10/69 12:30 น."
 const RE_CASH = /^รายการเงินสด(จ่าย|รับ) จำนวนเงิน ([0-9]+\.[0-9]{2}) บาท(?: ที่ (.+?))? วันที่ (\d{1,2}\/\d{1,2}\/\d{2,4} \d{1,2}:\d{2}) น\.$/;
 
+// โอนออกจากบัญชีที่ K PLUS ไม่แจ้งเตือน (โอนแบบกรอกเลขบัญชี) บันทึกจากฟอร์มเดียวกัน:
+// "รายการโอนเอง บัญชี xxx-x-x5855-x จำนวนเงิน 120.00 บาท ที่ ค่าโฮสต์ วันที่ 1/11/69 12:30 น."  นับในการ์ดโอน/สแกนจ่าย
+const RE_MANUAL_TX = /^รายการโอนเอง บัญชี xxx-x-x(\d{4})-x จำนวนเงิน ([0-9]+\.[0-9]{2}) บาท(?: ที่ (.+?))? วันที่ (\d{1,2}\/\d{1,2}\/\d{2,4} \d{1,2}:\d{2}) น\.$/;
+
 function parseCash_(raw, ref) {
-  const m = String(raw || '').replace(/\s+/g, ' ').trim().match(RE_CASH);
+  const s = String(raw || '').replace(/\s+/g, ' ').trim();
+  const t = s.match(RE_MANUAL_TX);
+  if (t) return { type: 'deposit', direction: 'out', amount: Number(t[2]), merchant: (t[3] || '').trim(), ref: t[1],
+                  when: parseWhen_(t[4], ref || new Date(), true) };
+  const m = s.match(RE_CASH);
   if (!m) return null;
   return { type: 'cash', direction: m[1] === 'จ่าย' ? 'out' : 'in', amount: Number(m[2]), merchant: (m[3] || '').trim(), ref: '',
            when: parseWhen_(m[4], ref || new Date(), true) };
@@ -803,6 +811,7 @@ const API_FNS = {
   addCash: function (k, a) { return addCash(k, a[0]); },
   confirmRefund: function (k, a) { return confirmRefund(k, a[0], a[1]); },
   rejectRefund: function (k, a) { return rejectRefund(k, a[0]); },
+  selfRefund: function (k, a) { return selfRefund(k, a[0]); },
   addMainTag: function (k, a) { return addMainTag(k, a[0]); },
   addSubTag: function (k, a) { return addSubTag(k, a[0], a[1]); },
   renameTag: function (k, a) { return renameTag(k, a[0], a[1], a[2]); },
@@ -974,13 +983,20 @@ function checkAppKey_(key) {
   if (key !== k) throw new Error('APP_KEY ไม่ถูกต้อง');
 }
 
-/** p = { dir: 'out'|'in', amount, merchant, when: 'yyyy-MM-ddTHH:mm' หรือว่าง = ตอนนี้ } เขียน Raw (app = manual) แล้ว parse เข้า Tx */
+/** p = { dir: 'out'|'in'|'tx', amount, merchant, acct (เลขท้ายบัญชี เมื่อ dir = tx), when: 'yyyy-MM-ddTHH:mm' หรือว่าง = ตอนนี้ }
+ *  เขียน Raw (app = manual) แล้ว parse เข้า Tx  dir = tx คือโอนออกจากบัญชีที่ไม่มีแจ้งเตือน */
 function addCash(appKey, p) {
   checkAppKey_(appKey);
   p = p || {};
   const amount = round2_(String(p.amount).replace(/,/g, ''));
   if (!(amount > 0 && amount <= 10000000)) throw new Error('ยอดเงินไม่ถูกต้อง');
-  if (p.dir !== 'out' && p.dir !== 'in') throw new Error('ต้องเลือกจ่ายหรือรับ');
+  if (p.dir !== 'out' && p.dir !== 'in' && p.dir !== 'tx') throw new Error('ต้องเลือกจ่ายหรือรับ');
+  let acct = '';
+  if (p.dir === 'tx') {
+    const a = accounts_().filter(x => x.kind === 'bank' && refNorm_(x.last4) && refNorm_(x.last4) === refNorm_(p.acct))[0];
+    if (!a) throw new Error('ต้องเลือกบัญชีที่โอนออก');
+    acct = ('0000' + refNorm_(a.last4)).slice(-4);
+  }
   const merchant = String(p.merchant || '').replace(/\s+/g, ' ').trim().slice(0, 40);
 
   const now = new Date();
@@ -991,7 +1007,8 @@ function addCash(appKey, p) {
     if (at - now > 3600000) throw new Error('วันเวลาเป็นอนาคต');
   }
   const be = (Number(fmt_(at, 'yyyy')) + 543) % 100;
-  const text = 'รายการเงินสด' + (p.dir === 'out' ? 'จ่าย' : 'รับ') + ' จำนวนเงิน ' + amount.toFixed(2) + ' บาท'
+  const text = (p.dir === 'tx' ? 'รายการโอนเอง บัญชี xxx-x-x' + acct + '-x' : 'รายการเงินสด' + (p.dir === 'out' ? 'จ่าย' : 'รับ'))
+    + ' จำนวนเงิน ' + amount.toFixed(2) + ' บาท'
     + (merchant ? ' ที่ ' + merchant : '') + ' วันที่ ' + fmt_(at, 'd/M/') + pad2_(be) + ' ' + fmt_(at, 'H:mm') + ' น.';
 
   return withLock_(function () {
@@ -1088,6 +1105,19 @@ function rejectRefund(appKey, inRow) {
     const hit = suggestRefunds_(rows, matches_(), Date.now()).filter(s => s.inRow === Number(inRow))[0];
     if (!hit) throw new Error('ไม่พบรายการที่แนะนำนี้แล้ว กดรีเฟรชแล้วลองใหม่');
     ensureSheet_(ss, 'Matches', MATCH_HEADERS).appendRow([hit.inKey, '', 'no', new Date()]);
+    return { ok: true };
+  });
+}
+
+/** กด "โอนจากบัญชีตัวเอง": เงินเข้าแถว inRow ติดแท็ก ข้าม (ไม่นับรายรับ ไม่ถามอีก) ใช้กับโอนจากบัญชีตัวเองที่ฝั่งโอนออกไม่มีแจ้งเตือน */
+function selfRefund(appKey, inRow) {
+  checkAppKey_(appKey);
+  return withLock_(function () {
+    const ss = SpreadsheetApp.getActive();
+    const rows = ss.getSheetByName('Tx').getDataRange().getValues();
+    const hit = suggestRefunds_(rows, matches_(), Date.now()).filter(s => s.inRow === Number(inRow))[0];
+    if (!hit) throw new Error('ไม่พบรายการที่แนะนำนี้แล้ว กดรีเฟรชแล้วลองใหม่');
+    ss.getSheetByName('Tx').getRange(hit.inRow, COL.tag + 1).setValue(SKIP_TAG);
     return { ok: true };
   });
 }
@@ -1776,7 +1806,7 @@ function reparseAll() {
     const p = parseApp_(text, rec, r[1]);
     if (!p) return;
     const when = p.when || rec;
-    if (p.type !== 'cash' && isDuplicate_(ss, p, when)) return;
+    if (r[1] !== 'manual' && isDuplicate_(ss, p, when)) return;
     seen2[text] = (seen2[text] || 0) + 1;
     p.tag = keep[text + '#' + seen2[text]] || autoTag_(ss, p.merchant + ' ' + text);
     appendTx_(ss, when, p, r[1], text);

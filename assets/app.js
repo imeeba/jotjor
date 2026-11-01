@@ -3,7 +3,7 @@
 (function () {
 'use strict';
 
-var APP_VER = '0.9.2';   // SemVer หลัก.รอง.แก้ไข: ฟีเจอร์ใหม่ขึ้นตัวกลาง แก้บั๊กขึ้นตัวท้าย; 1.0.0 = เปิดเผยแพร่พร้อม tutorial
+var APP_VER = '0.10.0';   // SemVer หลัก.รอง.แก้ไข: ฟีเจอร์ใหม่ขึ้นตัวกลาง แก้บั๊กขึ้นตัวท้าย; 1.0.0 = เปิดเผยแพร่พร้อม tutorial
 var LS_URL = 'jotjor_url', LS_KEY = 'jotjor_appkey', LS_CACHE = 'jotjor_cache';
 var URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
@@ -411,12 +411,31 @@ window.toggleCat = toggleCat; window.toggleSubs = toggleSubs; window.toggleUnOpe
 
 /* ---------- เงินสด ---------- */
 
-function cashDir(d) { cDir = d; $('cout').className = d === 'out' ? 'on' : ''; $('cin').className = d === 'in' ? 'on' : ''; }
+function cashDir(d) {
+  cDir = d; $('cout').className = d === 'out' ? 'on' : ''; $('cin').className = d === 'in' ? 'on' : ''; $('ctx').className = d === 'tx' ? 'on' : '';
+  var w = $('cacctw');
+  if (d !== 'tx') { w.hidden = true; return; }
+  /* โอนออกจากบัญชีที่ K PLUS ไม่แจ้งเตือน (โอนแบบกรอกเลขบัญชี): เลือกบัญชีที่โอนออก */
+  var banks = ((DATA && DATA.accounts) || []).filter(function (a) { return a.kind === 'bank'; });
+  var cur = $('cacct') ? $('cacct').value : '';
+  if (!banks.some(function (a) { return String(a.last4) === cur; })) cur = banks.length ? String(banks[0].last4) : '';
+  var h = '<select id="cacct" data-title="' + esc(t('cash.acct')) + '">';
+  banks.forEach(function (a) { h += opt(String(a.last4), (a.name ? a.name + ' · ' : '') + acctFmt('bank', a.last4), cur); });
+  w.innerHTML = h + '</select>' + (banks.length ? '' : '<div class="sub">' + t('cash.noAcct') + '</div>');
+  w.hidden = false; enhance(w);
+}
 function cashMsg(m) { $('cmsg').textContent = m || ''; }
 function patchCash(d, p) {
   var a = Number(String(p.amount).replace(/,/g, ''));
   var at = p.when ? new Date(p.when).getTime() : Date.now();
   if (offset !== 0 || !(a > 0) || isNaN(at) || at < d.cycle.start || at >= d.cycle.end) return;   // นอกรอบนี้: รอโหลดจากชีต
+  if (p.dir === 'tx') {   // โอนเอง: นับในการ์ดโอน/สแกนจ่าย
+    d.recent.push({ row: 0, at: at, stream: 'transfer', dir: 'out', amount: a, merchant: p.merchant.trim(), ref: String(p.acct), tag: '', linked: false });
+    d.recent.sort(function (x, y) { return y.at - x.at; });
+    addStream(d, 'transfer', a); addByTag(d.transfer, '', a); d.untagged++;
+    if (fDay.format(new Date(at)) === fDay.format(new Date())) { d.transfer.today += a; d.total.today += a; }
+    return;
+  }
   d.recent.push({ row: 0, at: at, stream: 'cash', dir: p.dir, amount: a, merchant: p.merchant.trim(), ref: '', tag: '', linked: false });
   d.recent.sort(function (x, y) { return y.at - x.at; });
   if (p.dir === 'out') {
@@ -429,7 +448,7 @@ function patchCash(d, p) {
 
 function cashGo() {
   if (cBusy) return;
-  var p = { dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: cWhen }, btn = $('cgo');
+  var p = { dir: cDir, amount: $('camt').value, merchant: $('cmer').value, when: cWhen, acct: cDir === 'tx' && $('cacct') ? $('cacct').value : '' }, btn = $('cgo');
   if (!(Number(String(p.amount).replace(/,/g, '')) > 0) || !DATA) {   // ยอดไม่ถูกต้อง: ให้ฝั่งชีตตอบข้อความผิดพลาดตามเดิม
     cBusy = true; sbSet(btn, 'busy'); cashMsg('');
     api('addCash', [p]).then(function () {
@@ -465,8 +484,14 @@ function cashGo() {
 function patchRefund(d, inRow, yes) {
   var s = d.suggest.filter(function (x) { return x.inRow === inRow; })[0];
   d.suggest = d.suggest.filter(function (x) { return x.inRow !== inRow; });
-  if (!yes || !s) return;
+  if (!s) return;
   var it = d.recent.filter(function (r) { return r.row === inRow; })[0];
+  if (yes === 'self') {   // โอนจากบัญชีตัวเอง: ติดแท็ก ข้าม ไม่นับรายรับ
+    if (it) it.tag = 'ข้าม';
+    d.income.account -= s.amount; d.income.accountCount--; d.income.total -= s.amount;
+    return;
+  }
+  if (!yes) return;
   if (it) { it.linked = true; it.tag = s.outTag || ''; }
   addStream(d, 'transfer', -s.amount); addByTag(d.transfer, mainOf(s.outTag), -s.amount); addSubPart(d, s.outTag || '', -s.amount);
   d.income.account -= s.amount; d.income.accountCount--; d.income.total -= s.amount;
@@ -475,7 +500,7 @@ function patchRefund(d, inRow, yes) {
 function refundGo(inRow, outRow, yes) {
   if (!DATA) return;
   optimistic(function (d) { patchRefund(d, inRow, yes); },
-    function () { return yes ? api('confirmRefund', [inRow, outRow]) : api('rejectRefund', [inRow]); }, 'save.fail');
+    function () { return yes === 'self' ? api('selfRefund', [inRow]) : yes ? api('confirmRefund', [inRow, outRow]) : api('rejectRefund', [inRow]); }, 'save.fail');
 }
 window.refundGo = refundGo;
 
@@ -854,7 +879,8 @@ function suggestBlock(d) {
     h += '<div class="sub">' + t('suggest.at', { time: fDT.format(new Date(s.inAt)) }) + '</div>';
     h += '<div class="sub">' + te('suggest.match', { time: fDT.format(new Date(s.outAt)), merchant: s.outMerchant ? ' · ' + s.outMerchant : '', tag: s.outTag || t('tag.untagged') }) + '</div>';
     h += '<div class="btns"><button class="pri" onclick="refundGo(' + Number(s.inRow) + ',' + Number(s.outRow) + ',true)">' + t('suggest.yes') + '</button>';
-    h += '<button onclick="refundGo(' + Number(s.inRow) + ',0,false)">' + t('suggest.no') + '</button></div></div>';
+    h += '<button onclick="refundGo(' + Number(s.inRow) + ',0,false)">' + t('suggest.no') + '</button>';
+    h += '<button class="full" onclick="refundGo(' + Number(s.inRow) + ',0,\'self\')">' + t('suggest.self') + '</button></div></div>';
   });
   h += '<div class="sub" style="margin-top:10px">' + t('suggest.note') + '</div>';
   return h + '</section>';
@@ -1492,6 +1518,7 @@ $('next').onclick = function () { if (offset < 0) { offset++; animMain = true; l
 $('rf').onclick = function () { load(true); };   // ปุ่มรีเฟรชข้ามแคชฝั่งเซิร์ฟเวอร์
 $('cout').onclick = function () { cashDir('out'); };
 $('cin').onclick = function () { cashDir('in'); };
+$('ctx').onclick = function () { cashDir('tx'); };
 $('cgo').onclick = cashGo;
 $('cashClose').onclick = function () { closeCash(); }; $('sheetbg').onclick = function () { closeCash(); };
 $('tabOut').onclick = function () { if (tab !== 'out') animMain = true; tab = 'out'; if (DATA) render(); };
