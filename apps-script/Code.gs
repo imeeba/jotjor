@@ -540,16 +540,21 @@ function ratesMap_(ss) {
 }
 
 function fetchRate_(date, ccy) {
+  // 1-2) Frankfurter (สกุลหลักราว 30 สกุล)  3-4) currency-api (รองรับสกุลอื่นเพิ่ม เช่น VND TWD AED) ใช้เมื่อ Frankfurter ไม่มีสกุลนั้น
+  const lc = ccy.toLowerCase();
   const urls = [
     'https://api.frankfurter.dev/v1/' + date + '?base=' + ccy + '&symbols=THB',
-    'https://api.frankfurter.app/' + date + '?from=' + ccy + '&to=THB'
+    'https://api.frankfurter.app/' + date + '?from=' + ccy + '&to=THB',
+    'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@' + date + '/v1/currencies/' + lc + '.json',
+    'https://' + date + '.currency-api.pages.dev/v1/currencies/' + lc + '.json'
   ];
   for (let i = 0; i < urls.length; i++) {
     try {
       const res = UrlFetchApp.fetch(urls[i], { muteHttpExceptions: true });
       if (res.getResponseCode() !== 200) continue;
-      const r = JSON.parse(res.getContentText()).rates;
-      if (r && Number(r.THB) > 0) return Number(r.THB);
+      const j = JSON.parse(res.getContentText());
+      const v = j.rates ? j.rates.THB : (j[lc] ? j[lc].thb : 0);
+      if (Number(v) > 0) return Number(v);
     } catch (err) { console.error(err); }
   }
   return null;
@@ -1908,6 +1913,8 @@ function testParse() {
     'รายการเงินเข้า บัญชี xxx-x-x9024-x จำนวนเงิน 1.00 บาท วันที่ 27 ต.ค. 69 00:16 น.',
     'ชำระ=THB9,816.00 SHOPEE. OTP=211264(DTGW) ห้ามเปิดเผย OTP',
     'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 8.99 USD ที่ Google Workspace_tamada.i',
+    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 1,500.00 JPY ที่ AMAZON JP',
+    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 250000.00 VND ที่ GRAB VN',
     'รหัส OTP ของคุณคือ 123456'
   ].forEach(s => {
     const p = parse_(s, new Date());
