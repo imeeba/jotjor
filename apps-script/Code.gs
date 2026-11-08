@@ -426,7 +426,7 @@ function out_(obj) {
 function appendTx_(ss, dt, tx, app, raw) {
   const sh = ss.getSheetByName('Tx');
   const row = sh.getLastRow() + 1;
-  sh.getRange(row, COL.ref + 1).setNumberFormat('@');   // เก็บเลขอ้างอิงเป็นข้อความ ไม่ให้ 0030 กลายเป็น 30
+  sh.getRange(row, COL.ref + 1).setNumberFormat('@');   // เก็บเลขอ้างอิงเป็นข้อความ ไม่ให้ 0012 กลายเป็น 12
   sh.getRange(row, 1, 1, 10).setValues([[dt, fmt_(dt, 'yyyy-MM-dd'), tx.type, tx.direction, tx.amount, tx.merchant, String(tx.ref || ''), app, raw, tx.tag || '']]);
   return row;
 }
@@ -442,7 +442,7 @@ const RE_OUT = /เงินออก|ถอน|โอน|จ่าย|ชำร
 const RE_CREDIT = /บัตรเครดิต|credit\s*card|credit|บัตร\s*(?:หมายเลข|เลขที่)?\s*[xX*•\-]*\d{4}|card\s*(?:no\.?)?\s*[xX*•\-]*\d{4}/i;
 const RE_DEPOSIT = /บัญชี|บช\.?|account|a\/c|acct|[xX]{3,}[\-xX]*\d{3,}/i;
 
-// SMS OTP ตอนจ่ายออนไลน์ของ KBank: "ชำระ=THB9,816.00 SHOPEE. OTP=xxxxxx(ABCD) ห้ามเปิดเผย OTP"
+// SMS OTP ตอนจ่ายออนไลน์ของ KBank: "ชำระ=THB123.00 SHOPEE. OTP=xxxxxx(ABCD) ห้ามเปิดเผย OTP"
 const RE_SMS_PAY = /^ช(?:ำ|ํา)ระ\s*[=:]\s*(?:THB|฿)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\s+(.+?)\.?\s*OTP\s*[=:]/i;
 
 const TH_MONTHS = { 'ม.ค.': 1, 'ก.พ.': 2, 'มี.ค.': 3, 'เม.ย.': 4, 'พ.ค.': 5, 'มิ.ย.': 6,
@@ -593,7 +593,7 @@ function fxToThb_(ss, tx, when) {
 const RE_CASH = /^รายการเงินสด(จ่าย|รับ) จำนวนเงิน ([0-9]+\.[0-9]{2}) บาท(?: ที่ (.+?))? วันที่ (\d{1,2}\/\d{1,2}\/\d{2,4} \d{1,2}:\d{2}) น\.$/;
 
 // โอนออกจากบัญชีที่ K PLUS ไม่แจ้งเตือน (โอนแบบกรอกเลขบัญชี) บันทึกจากฟอร์มเดียวกัน:
-// "รายการโอนเอง บัญชี xxx-x-x5855-x จำนวนเงิน 120.00 บาท ที่ ค่าโฮสต์ วันที่ 1/11/69 12:30 น."  นับในการ์ดโอน/สแกนจ่าย
+// "รายการโอนเอง บัญชี xxx-x-x1234-x จำนวนเงิน 120.00 บาท ที่ ค่าอาหาร วันที่ 1/11/69 12:30 น."  นับในการ์ดโอน/สแกนจ่าย
 const RE_MANUAL_TX = /^รายการโอนเอง บัญชี xxx-x-x(\d{4})-x จำนวนเงิน ([0-9]+\.[0-9]{2}) บาท(?: ที่ (.+?))? วันที่ (\d{1,2}\/\d{1,2}\/\d{2,4} \d{1,2}:\d{2}) น\.$/;
 
 function parseCash_(raw, ref) {
@@ -1907,14 +1907,14 @@ function reparseAll() {
 function testParse() {
   const ss = SpreadsheetApp.getActive();
   [
-    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 20.00 บาท ที่ SHOPEE *SHOPEE',
-    'รายการโอน/ถอน บัญชี xxx-x-x5855-x จำนวนเงิน 1.00 บาท วันที่ 27 ต.ค. 69 00:16 น.',
-    'รายการโอนเงินล่วงหน้าสำเร็จ โอนให้บัญชี xxx-x-x0030-x จำนวนเงิน 1.00 บาท',
-    'รายการเงินเข้า บัญชี xxx-x-x9024-x จำนวนเงิน 1.00 บาท วันที่ 27 ต.ค. 69 00:16 น.',
-    'ชำระ=THB9,816.00 SHOPEE. OTP=211264(DTGW) ห้ามเปิดเผย OTP',
-    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 8.99 USD ที่ Google Workspace_tamada.i',
-    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 1,500.00 JPY ที่ AMAZON JP',
-    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-7697 จำนวนเงิน 250000.00 VND ที่ GRAB VN',
+    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-1111 จำนวนเงิน 20.00 บาท ที่ SHOPEE *SHOPEE',
+    'รายการโอน/ถอน บัญชี xxx-x-x1234-x จำนวนเงิน 1.00 บาท วันที่ 27 ต.ค. 69 00:16 น.',
+    'รายการโอนเงินล่วงหน้าสำเร็จ โอนให้บัญชี xxx-x-x4321-x จำนวนเงิน 1.00 บาท',
+    'รายการเงินเข้า บัญชี xxx-x-x5678-x จำนวนเงิน 1.00 บาท วันที่ 27 ต.ค. 69 00:16 น.',
+    'ชำระ=THB123.00 SHOPEE. OTP=000000(DTGW) ห้ามเปิดเผย OTP',
+    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-1111 จำนวนเงิน 8.99 USD ที่ EXAMPLE CLOUD SERVICE',
+    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-1111 จำนวนเงิน 1,500.00 JPY ที่ AMAZON JP',
+    'รายการใช้บัตร หมายเลขบัตร xxxx-xxxx-xxxx-1111 จำนวนเงิน 250000.00 VND ที่ GRAB VN',
     'รหัส OTP ของคุณคือ 123456'
   ].forEach(s => {
     const p = parse_(s, new Date());
